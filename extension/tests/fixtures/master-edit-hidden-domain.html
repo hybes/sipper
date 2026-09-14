@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html xmlns='http://www.w3.org/1999/xhtml' xml:lang='en' lang='en'>
+<head>
+	<meta name="robots" content="noindex, nofollow, noarchive" />
+	<meta http-equiv="content-type" content="text/html; charset=utf-8">
+	<meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no'>
+	<link rel='stylesheet' type='text/css' href='/resources/bootstrap/css/bootstrap.min.css.php'>
+	<link rel='stylesheet' type='text/css' href='/resources/fontawesome/css/all.min.css.php'>
+	<link rel='stylesheet' type='text/css' href='/themes/default/css.php?updated=202608261400'>
+	<link rel='icon' href='/themes/default/favicon.ico'>
+	<title>Extension - FusionPBX</title>
+	<script language='JavaScript' type='text/javascript' src='/resources/jquery/jquery.min.js.php'></script>
+	<script language='JavaScript' type='text/javascript' src='/resources/bootstrap/js/bootstrap.min.js.php'></script>
+	<script language='JavaScript' type='text/javascript' src='/resources/javascript/select_group_option.js'></script>
+	<script language='JavaScript' type='text/javascript'>
+		function hide_password_fields() {
+			var password_fields = document.querySelectorAll("input[type='password']");
+			for (var p = 0, max = password_fields.length; p < max; p++) {
+				password_fields[p].style.visibility = 'hidden';
+				password_fields[p].type = 'text';
+			}
+		}
+		window.addEventListener('beforeunload', function(e){
+			hide_password_fields();
+		});
+	</script>
+</head>
+<body>
+<div id='background-image'></div><div id='background-color'></div><div id='message_container'></div>
+<div id='domains_container'><input type='hidden' id='domains_visible' value='0'><div id='domains_block'><div id='domains_header'><a id='domains_title' href='/core/domains/domains.php'>Domains<div class='count' id='domain_count'></div></a><input type='text' id='domains_search' class='formfld' placeholder='Search'></div><div id='domains_list'></div></div></div>
+<div id='qr_code_container' style='display: none;'></div>
+<div id='body_header'>
+	<div id='body_header_brand_text'><a href='/'>FusionPBX</a></div>
+	<a class='nav-link header_domain header_domain_selector_domain d-block d-sm-none' href='select:domain' onclick='event.preventDefault();' data-toggle='collapse' data-target='#main_navbar' title='Open Selector'><span class='fa-solid fa-earth-americas'></span><span style='margin-left: 7px;'>tenant.example.com</span></a>
+			<a class='nav-link header_domain header_domain_selector_domain d-none d-sm-block' href='select:domain' onclick='event.preventDefault();' title='Open Selector'><span class='fa-solid fa-earth-americas'></span><span class='d-none d-md-inline' style='margin-left: 7px;'>tenant.example.com</span></a>
+	<a href='show:usermenu' onclick="event.preventDefault();" title='admin' class='header_user'><i class='fa-solid fa-user-circle fa-fw'></i><span class='d-none d-sm-inline'>admin</span></a>
+</div>
+<div id='main_content'>
+<form method='post' name='frm' id='frm'>
+<div class='action_bar' id='action_bar'>
+	<div class='heading'><b>Extension</b></div>
+	<div class='actions'>
+<button type='button' class='btn btn-default' id='btn_back' onclick="window.location.href='extensions.php?page=0&order_by=extension&order=asc'"><span class='fas fa-arrow-left fa-fw'></span><span class='button-label'>Back</span></button><button type='button' class='btn btn-default' id='btn_save' style='margin-left: 15px;' onclick='submit_form();'><span class='fas fa-check fa-fw'></span><span class='button-label'>Save</span></button>	</div>
+	<div style='clear: both;'></div>
+</div>
+<div class='card'>
+<table width='100%' border='0' cellpadding='0' cellspacing='0'>
+<tr>
+<td width='30%' class='vncellreq' valign='top' align='left' nowrap='nowrap'>
+    Extension
+</td>
+<td width='70%' class='vtable' align='left'>
+    <input class='formfld' type='text' name='extension' autocomplete='new-password' maxlength='255' value="1002" required='required' placeholder="">
+    <input type='text' style='display: none;' disabled='disabled'>
+<br />
+Enter the extension number.
+</td>
+</tr>
+<tr>
+<td class='vncell' valign='top' align='left' nowrap='nowrap'>
+    Number Alias
+</td>
+<td class='vtable' align='left'>
+    <input class='formfld' type='number' name='number_alias' autocomplete='new-password' maxlength='255' min='0' step='1' value="">
+    <input type='text' style='display: none;' disabled='disabled'>
+<br />
+Optional number alias.
+</td>
+</tr>
+<tr>
+<td class='vncellreq' valign='top' align='left' nowrap='nowrap'>
+    Password
+</td>
+<td class='vtable' align='left'>
+    <input type='password' style='display: none;' disabled='disabled'>
+    <input class='formfld password' type='password' name='password' id='password' autocomplete='new-password' onmouseover="this.type='text';" onfocus="this.type='text';" onmouseout="if (!$(this).is(':focus')) { this.type='password'; }" onblur="this.type='password';" maxlength='50' value="p4ss-1002">
+    <br />
+    Enter the password here.
+</td>
+</tr>
+<tr>
+<td class='vncell' valign='top' align='left' nowrap='nowrap'>
+    Voicemail Password
+</td>
+<td class='vtable' align='left'>
+    <input type='password' style='display: none;' disabled='disabled'>
+    <input class='formfld' type='password' name='voicemail_password' id='voicemail_password' autocomplete='new-password' onmouseover="this.type='text';" onfocus="this.type='text';" onmouseout="if (!$(this).is(':focus')) { this.type='password'; }" onblur="this.type='password';" maxlength='255' value='1234'>
+<br />
+Enter the voicemail password here.
+</td>
+</tr>
+<tr>
+<td class='vncell' valign='top' align='left' nowrap='nowrap'>
+    Account Code
+</td>
+<td class='vtable' align='left'>
+    <input class='formfld' type='text' name='accountcode' id='accountcode' maxlength='255' value='tenant.example.com'>
+<br />
+Enter the account code here.
+</td>
+</tr>
+<tr>
+<td class='vncell' valign='top' align='left' nowrap='nowrap'>
+    Effective Caller ID Name
+</td>
+<td class='vtable' align='left'>
+    <input class='formfld' type='text' name='effective_caller_id_name' maxlength='255' value="Front &amp; Desk">
+<br />
+Enter the effective caller ID name here.
+</td>
+</tr>
+<tr>
+<td class='vncell' valign='top' align='left' nowrap='nowrap'>
+    Effective Caller ID Number
+</td>
+<td class='vtable' align='left'>
+    <input class='formfld' type='text' name='effective_caller_id_number' min='0' step='1' maxlength='255' value="1002">
+<br />
+Enter the effective caller ID number here.
+</td>
+</tr>
+<tr>
+<td class='vncell' valign='top' align='left' nowrap='nowrap'>
+    Outbound Caller ID Name
+</td>
+<td class='vtable' align='left'>
+    <input class='formfld' type='text' name='outbound_caller_id_name' maxlength='255' value="Example Ltd">
+<br />
+Enter the outbound caller ID name here.
+</td>
+</tr>
+<tr>
+<td class='vncell' valign='top' align='left' nowrap='nowrap'>
+    Outbound Caller ID Number
+</td>
+<td class='vtable' align='left'>
+    <input class='formfld' type='text' name='outbound_caller_id_number' maxlength='255' min='0' step='1' value="441onward">
+<br />
+Enter the outbound caller ID number here.
+</td>
+</tr>
+<tr>
+<td class='vncell' valign='top' align='left' nowrap='nowrap'>
+    Call Timeout
+</td>
+<td class='vtable' align='left'>
+    <input class='formfld' type='number' name='call_timeout' maxlength='255' min='1' step='1' value="30">
+<br />
+Ring time before voicemail.
+</td>
+</tr>
+<tr>
+<td class='vncellreq' valign='top' align='left' nowrap='nowrap'>
+    User Context
+</td>
+<td class='vtable' align='left'>
+    <input class='formfld' type='text' name='user_context' maxlength='255' value="tenant.example.com" required='required'>
+<br />
+Enter the user context here.
+</td>
+</tr>
+<tr class='advanced-row' style='display: none;'>
+<td class='vncell' valign='top' align='left' nowrap='nowrap'>
+    SIP Force Contact
+</td>
+<td class='vtable' align='left'>
+    <select class='formfld' name='sip_force_contact'>
+    <option value=''></option>
+    <option value='NDLB-connectile-dysfunction'>Rewrite Contact IP and Port</option>
+    <option value='NDLB-connectile-dysfunction-2.0'>Rewrite Contact IP and Port 2.0</option>
+    <option value='NDLB-tls-connectile-dysfunction'>Rewrite TLS Contact Port</option>
+    </select>
+</td>
+</tr>
+<tr>
+<td class='vncellreq' valign='top' align='left' nowrap='nowrap'>
+    Enabled
+</td>
+<td class='vtable' align='left'>
+	<span class='switch'>
+	<select class='formfld' id='enabled' name='enabled'>
+		<option value='true' >True</option>
+		<option value='false' selected='selected'>False</option>
+	</select>
+		<span class='slider'></span>
+	</span>
+<br />
+Set the status of this extension.
+</td>
+</tr>
+<tr>
+<td class='vncell' valign='top' align='left' nowrap='nowrap'>
+    Description
+</td>
+<td class='vtable' align='left'>
+    <input type='text' class='formfld' name='description' value="Lobby &lt;phone&gt;">
+<br />
+Enter the description.
+</td>
+</tr>
+</table></div>
+<br><br><input type='hidden' name='order_by' value='extension'>
+<input type='hidden' name='order' value='asc'>
+<input type='hidden' name='page' value='0'>
+<input type='hidden' name='extension_uuid' value='4a7d3b2f-6c8e-4d9f-8b1c-2d3e4f5a6b7c'>
+<input type='hidden' name='id' id='id' value='4a7d3b2f-6c8e-4d9f-8b1c-2d3e4f5a6b7c'><input type='hidden' name='domain_uuid' id='domain_uuid' value='0a1b2c3d-0000-4000-8000-000000000002'><input type='hidden' name='delete_type' id='delete_type' value=''><input type='hidden' name='delete_uuid' id='delete_uuid' value=''><input type='hidden' name='search' id='search' value="" />
+<input type='hidden' name='token-extension_edit' value='8f1e0c2b4d6a8e0f1a2b3c4d5e6f7a8b9c0d1e2f'>
+</form><script>
+	function submit_form() {
+		hide_password_fields();
+		$('form#frm').submit();
+	}
+</script>
+
+</div>
+<div id='footer'><span class='footer'>&copy; Copyright 2008 - 2026 <a href='http://www.fusionpbx.com' target='_blank'>FusionPBX</a>. All rights reserved.</span></div>
+</body>
+</html>

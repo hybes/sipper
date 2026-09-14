@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Sipper",
+  "description": "Add SIP accounts from your PBX to Sipper",
+  "version": "0.1.0",
+  "minimum_chrome_version": "111",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqMMgFFsoY2RWrwvuBZXel6M1iYPqw8ZcCWyPdhNqdE2a82K/tStEZzVpFYRz/3GfTQ+lzxB1RQOaCIWAU7lUf7+x8kADZAlttj0N4koRB9G/2DFZcTyNRSo+0x0rRohdKy+ozzsyk79Wd3eIScqvv+kBsDpgjkAL5wUtILQ/l71oMLvu9aoZNqkXT7UWMGJ034coKSzP0o/8sOhMzv8XG8ZxZ23sHeVOKi28Nwq5i3OAQ0APpgsh9grJQm8Fl9NnoxAamXdBtOM43EDoNAURlvEFAvvYMPn+f1QjBAi0+QoxCps5aS2c6vvIcNEKAt1K41y31980nLcDrCnT/AhlfwIDAQAB",
+  "permissions": ["activeTab", "scripting", "nativeMessaging", "storage"],
+  "action": {
+    "default_title": "Add to Sipper",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

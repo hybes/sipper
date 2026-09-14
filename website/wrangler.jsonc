@@ -1,0 +1,25 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "sipper-website",
+	"main": "src/worker.js",
+	"compatibility_date": "2026-09-01",
+	"routes": [
+		{ "pattern": "sipper.dev", "custom_domain": true },
+		{ "pattern": "www.sipper.dev", "custom_domain": true }
+	],
+	"assets": {
+		"directory": "public",
+		"binding": "ASSETS",
+		"html_handling": "auto-trailing-slash",
+		"not_found_handling": "404-page",
+		// The Worker handles every request so it can redirect www and add security headers.
+		"run_worker_first": true
+	},
+	"vars": {
+		// The DMG attached to the latest GitHub release, for example
+		// https://github.com/hybes/sipper/releases/download/v0.1.0/Sipper-0.1.0.dmg
+		// Update it and deploy again for each release. While it is empty there is no public
+		// download: sipper.dev/download goes to "Get Sipper" and the pages say "coming soon".
+		"DOWNLOAD_URL": ""
+	}
+}

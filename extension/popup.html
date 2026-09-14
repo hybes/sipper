@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <title>Sipper</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="header">
+    <h1>Sipper</h1>
+    <p id="page-status" class="muted" aria-live="polite">Reading the current page…</p>
+  </header>
+
+  <main>
+    <section id="view-loading" class="view">
+      <p class="muted">Reading the current page…</p>
+    </section>
+
+    <section id="view-message" class="view" hidden>
+      <p id="message-text"></p>
+      <p id="message-hint" class="muted"></p>
+      <div class="actions">
+        <button type="button" id="manual-toggle">Enter an account manually</button>
+      </div>
+    </section>
+
+    <section id="view-account" class="view" hidden>
+      <form id="account-form" novalidate autocomplete="off">
+        <p id="account-intro" class="muted"></p>
+
+        <div class="field">
+          <label for="account-label">Label</label>
+          <input id="account-label" name="label" type="text" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="account-display-name">Display name</label>
+          <input id="account-display-name" name="displayName" type="text">
+        </div>
+        <div class="field">
+          <label for="account-username">Username / extension</label>
+          <input id="account-username" name="username" type="text" required spellcheck="false" autocapitalize="off">
+        </div>
+        <div class="field">
+          <label for="account-password">Password</label>
+          <div class="password-row">
+            <input id="account-password" name="password" type="password" required spellcheck="false" autocapitalize="off">
+            <button type="button" id="password-toggle" aria-pressed="false" aria-controls="account-password">Show</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="account-domain">Domain</label>
+          <input id="account-domain" name="domain" type="text" required spellcheck="false" autocapitalize="off">
+        </div>
+        <div class="field">
+          <label for="account-server">Server</label>
+          <input id="account-server" name="server" type="text" spellcheck="false" autocapitalize="off">
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="account-port">Port</label>
+            <input id="account-port" name="port" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="5060">
+          </div>
+          <div class="field">
+            <label for="account-transport">Transport</label>
+            <select id="account-transport" name="transport">
+              <option value="udp">UDP</option>
+              <option value="tcp">TCP</option>
+              <option value="tls">TLS</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="account-profile">Profile in Sipper</label>
+          <input id="account-profile" name="profile" type="text" spellcheck="false">
+        </div>
+
+        <ul id="account-notes" class="notes" hidden></ul>
+        <p id="account-error" class="error" role="alert" hidden></p>
+
+        <div class="actions">
+          <button type="submit" class="primary" id="account-add">Add to Sipper</button>
+          <button type="button" id="account-copy">Copy as JSON</button>
+          <button type="button" id="account-back" class="link" hidden>Back</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="view-list" class="view" hidden>
+      <p id="list-intro" class="muted"></p>
+      <div class="list-toolbar">
+        <label class="check"><input type="checkbox" id="select-all"> Select all</label>
+        <span id="list-count" class="muted" aria-live="polite">0 selected</span>
+      </div>
+      <ul id="extension-list" class="extension-list"></ul>
+
+      <form id="list-form" novalidate autocomplete="off">
+        <div class="field">
+          <label for="list-server">Server</label>
+          <input id="list-server" name="server" type="text" spellcheck="false" autocapitalize="off">
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="list-port">Port</label>
+            <input id="list-port" name="port" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="5060">
+          </div>
+          <div class="field">
+            <label for="list-transport">Transport</label>
+            <select id="list-transport" name="transport">
+              <option value="udp">UDP</option>
+              <option value="tcp">TCP</option>
+              <option value="tls">TLS</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="list-profile">Profile in Sipper</label>
+          <input id="list-profile" name="profile" type="text" spellcheck="false">
+        </div>
+
+        <ul id="list-notes" class="notes" hidden></ul>
+        <p id="list-error" class="error" role="alert" hidden></p>
+
+        <div class="actions">
+          <button type="submit" class="primary" id="list-add" disabled>Add 0 to Sipper</button>
+          <button type="button" id="list-copy" disabled>Copy as JSON</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="view-progress" class="view" hidden>
+      <p id="progress-text" aria-live="polite"></p>
+      <progress id="progress-bar" max="1" value="0"></progress>
+      <ul id="progress-failures" class="failures"></ul>
+      <div class="actions">
+        <button type="button" id="progress-cancel">Stop</button>
+      </div>
+    </section>
+
+    <section id="view-result" class="view" hidden>
+      <p id="result-text" aria-live="polite"></p>
+      <ul id="result-notes" class="notes" hidden></ul>
+      <ul id="result-failures" class="failures"></ul>
+      <div class="actions">
+        <button type="button" id="result-back">Back</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p id="sipper-status" class="muted" aria-live="polite">Checking for Sipper…</p>
+  </footer>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

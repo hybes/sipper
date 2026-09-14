@@ -1,0 +1,280 @@
+:root {
+  color-scheme: light dark;
+  --accent: #268089;
+  --accent-text: #ffffff;
+  --rule: color-mix(in srgb, CanvasText 16%, transparent);
+  --rule-strong: color-mix(in srgb, CanvasText 32%, transparent);
+  --error: #b3261e;
+  --row-hover: color-mix(in srgb, CanvasText 6%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent: #3fa3ad;
+    --accent-text: #08282c;
+    --error: #ff8a80;
+  }
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  width: 360px;
+  max-height: 580px;
+  overflow-y: auto;
+  background: Canvas;
+  color: CanvasText;
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.header p {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+main {
+  padding: 12px 14px;
+}
+
+.view p {
+  margin: 0 0 8px;
+}
+
+.muted {
+  color: GrayText;
+}
+
+.error {
+  color: var(--error);
+}
+
+.footer {
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--rule);
+}
+
+.footer p {
+  margin: 0;
+  font-size: 12px;
+}
+
+/* Forms */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 8px;
+  min-width: 0;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+label {
+  font-size: 12px;
+  color: GrayText;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: CanvasText;
+  font-size: 13px;
+}
+
+input[type="text"],
+input[type="password"],
+select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 5px 7px;
+  font: inherit;
+  color: FieldText;
+  background: Field;
+  border: 1px solid var(--rule-strong);
+  border-radius: 5px;
+}
+
+select {
+  padding-right: 22px;
+}
+
+.password-row {
+  display: flex;
+  gap: 6px;
+}
+
+.password-row input {
+  flex: 1;
+}
+
+button {
+  font: inherit;
+  padding: 5px 10px;
+  color: ButtonText;
+  background: ButtonFace;
+  border: 1px solid var(--rule-strong);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: color-mix(in srgb, ButtonFace 85%, CanvasText);
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+button.primary {
+  color: var(--accent-text);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, CanvasText);
+}
+
+button.link {
+  background: none;
+  border-color: transparent;
+  color: LinkText;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.notes,
+.failures {
+  margin: 6px 0 8px;
+  padding-left: 18px;
+  font-size: 12px;
+}
+
+.notes {
+  color: GrayText;
+}
+
+.failures {
+  color: var(--error);
+}
+
+.notes li,
+.failures li {
+  margin-bottom: 2px;
+}
+
+/* Extension list */
+
+.list-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.extension-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--rule);
+}
+
+.extension-list li {
+  border-bottom: 1px solid var(--rule);
+}
+
+.extension-list li:last-child {
+  border-bottom: 0;
+}
+
+.extension-list label {
+  display: grid;
+  grid-template-columns: auto minmax(48px, auto) 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 2px;
+  font-size: 13px;
+  color: CanvasText;
+  cursor: pointer;
+}
+
+.extension-list label:hover {
+  background: var(--row-hover);
+}
+
+.extension-list .ext {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.extension-list .detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: GrayText;
+}
+
+.extension-list .detail b {
+  font-weight: 500;
+  color: CanvasText;
+}
+
+progress {
+  width: 100%;
+  margin: 4px 0 8px;
+  accent-color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

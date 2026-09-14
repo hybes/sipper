@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Sipper: a free SIP phone for your Mac</title>
+	<meta name="description" content="Sipper is a free, native SIP phone for macOS. Add the SIP account from your phone provider or office phone system, then make, answer, transfer and record calls on your Mac.">
+	<link rel="canonical" href="https://sipper.dev/">
+	<meta name="theme-color" content="#fbfbf9" media="(prefers-color-scheme: light)">
+	<meta name="theme-color" content="#0e1516" media="(prefers-color-scheme: dark)">
+	<link rel="icon" type="image/png" sizes="32x32" href="/assets/icon-32.png">
+	<link rel="icon" type="image/png" sizes="64x64" href="/assets/icon-64.png">
+	<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+	<link rel="stylesheet" href="/assets/site.css">
+	<meta property="og:type" content="website">
+	<meta property="og:site_name" content="Sipper">
+	<meta property="og:title" content="Sipper: a free SIP phone for your Mac">
+	<meta property="og:description" content="Add the SIP account from your phone provider or office phone system, then make, answer, transfer and record calls on your Mac.">
+	<meta property="og:url" content="https://sipper.dev/">
+	<meta property="og:image" content="https://sipper.dev/assets/og.png">
+	<meta property="og:image:width" content="1200">
+	<meta property="og:image:height" content="630">
+	<meta property="og:image:alt" content="Sipper's dial pad window beside the headline: Make and take SIP calls on your Mac.">
+	<meta name="twitter:card" content="summary_large_image">
+	<script type="application/ld+json">
+	{
+		"@context": "https://schema.org",
+		"@type": "SoftwareApplication",
+		"name": "Sipper",
+		"url": "https://sipper.dev/",
+		"description": "A free, native SIP phone for macOS.",
+		"applicationCategory": "BusinessApplication",
+		"operatingSystem": "macOS 14 or later",
+		"offers": { "@type": "Offer", "price": "0", "priceCurrency": "GBP" },
+		"author": { "@type": "Person", "name": "Ben Hybert" },
+		"screenshot": "https://sipper.dev/assets/screens/dialer-2360.webp"
+	}
+	</script>
+</head>
+<body>
+	<a class="skip" href="#main">Skip to content</a>
+
+	<header class="site-header">
+		<div class="wrap">
+			<a class="brand" href="/" aria-current="page"><img src="/assets/icon-64.png" alt="" width="32" height="32">Sipper</a>
+			<nav class="site-nav" aria-label="Main">
+				<a href="/support">Support</a>
+				<a href="/privacy">Privacy</a>
+				<a href="https://github.com/hybes/sipper">Source code</a>
+			</nav>
+		</div>
+	</header>
+
+	<main id="main">
+		<section class="hero">
+			<div class="wrap">
+				<h1>Make and take SIP calls on your Mac.</h1>
+				<p class="lede">Sipper is a free phone app built for macOS. Enter the SIP details from your phone provider or office phone system and your Mac becomes your desk phone, with a dial pad, transfers, call history, contacts and recording.</p>
+				<div class="actions">
+					<a class="button primary" href="/download" data-launched hidden>Download for Mac</a>
+					<span class="status" data-prelaunch>Download coming soon</span>
+					<a class="button" href="https://github.com/hybes/sipper#building" data-prelaunch>Build it from source</a>
+				</div>
+				<p class="fine">Free · macOS 14 Sonoma or later · Macs with Apple silicon</p>
+
+				<figure class="shot hero-shot">
+					<img src="/assets/screens/dialer-1180.webp"
+						srcset="/assets/screens/dialer-1180.webp 1180w, /assets/screens/dialer-2360.webp 2360w"
+						sizes="(min-width: 66rem) 62rem, calc(100vw - 2rem)"
+						width="1180" height="760" fetchpriority="high"
+						alt="Sipper's main window: the dial pad with the Reception line selected and registered, recent calls underneath, and work and home lines grouped in the sidebar.">
+				</figure>
+			</div>
+		</section>
+
+		<section class="section tint after-hero" aria-labelledby="ringing">
+			<div class="wrap split">
+				<div>
+					<h2 id="ringing">When it rings, you'll see it</h2>
+					<p class="section-intro">An incoming call opens a small alert that floats above your other windows, on every Space and over full-screen apps. It shows who's calling and which of your lines they called. Press <kbd aria-hidden="true">⌘</kbd><kbd aria-hidden="true">↩</kbd><span class="visually-hidden">Command Return</span> to answer.</p>
+					<ul class="points">
+						<li>People you've saved as contacts show by name.</li>
+						<li>Notifications have Answer and Decline buttons, so you can pick up while Sipper is hidden.</li>
+						<li>Choose a ringtone, or turn on Do Not Disturb to turn calls away as busy.</li>
+					</ul>
+				</div>
+				<figure class="shot stage">
+					<img src="/assets/screens/incoming.webp" width="400" height="172" loading="lazy"
+						alt="Sipper's incoming call alert: Daniel Osei calling via the Reception line, with Decline and Answer buttons.">
+				</figure>
+			</div>
+		</section>
+
+		<section class="section" aria-labelledby="on-a-call">
+			<div class="wrap split flip">
+				<div>
+					<h2 id="on-a-call">Everything your desk phone does, with shortcuts</h2>
+					<p class="section-intro">Put people on hold, mute yourself and use the keypad to get through phone menus. Transfer a call straight away, or speak to your colleague first and then hand it over. Take a second call and the first goes on hold; swap between them whenever you like.</p>
+					<dl class="shortcuts">
+						<div><dt>New call</dt><dd><span aria-hidden="true"><kbd>⌘</kbd><kbd>N</kbd></span><span class="visually-hidden">Command N</span></dd></div>
+						<div><dt>Answer or hang up</dt><dd><span aria-hidden="true"><kbd>⌘</kbd><kbd>↩</kbd></span><span class="visually-hidden">Command Return</span></dd></div>
+						<div><dt>Mute</dt><dd><span aria-hidden="true"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>M</kbd></span><span class="visually-hidden">Command Shift M</span></dd></div>
+						<div><dt>Hold</dt><dd><span aria-hidden="true"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd></span><span class="visually-hidden">Command Shift H</span></dd></div>
+						<div><dt>Do Not Disturb</dt><dd><span aria-hidden="true"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>D</kbd></span><span class="visually-hidden">Command Shift D</span></dd></div>
+					</dl>
+				</div>
+				<figure class="shot">
+					<img src="/assets/screens/in-call-1180.webp"
+						srcset="/assets/screens/in-call-1180.webp 1180w, /assets/screens/in-call-2360.webp 2360w"
+						sizes="(min-width: 900px) 37rem, calc(100vw - 2rem)"
+						width="1180" height="760" loading="lazy"
+						alt="Sipper during a call with Priya Raman: the call timer, recording on, buttons for mute, hold, keypad, transfer and stopping the recording, and Daniel Osei waiting on hold with a Swap button.">
+				</figure>
+			</div>
+		</section>
+
+		<section class="section tint" aria-labelledby="history">
+			<div class="wrap split">
+				<div>
+					<h2 id="history">Find the call from Tuesday afternoon</h2>
+					<p class="section-intro">History keeps every call with its line, outcome and length. Show only missed calls, search by name or number, and call back from the same line with one click.</p>
+					<h3>Contacts</h3>
+					<p>Save the people you call often, with all their numbers. Favourites stay at the top, and a contact can be set to always call from a particular line.</p>
+					<h3>Voicemail</h3>
+					<p>Each line shows when messages are waiting, and one click calls your voicemail.</p>
+					<h3>Recording</h3>
+					<p>Press Record during a call, or record every call automatically. Recordings are saved to a folder you choose, linked from the call in History, and never leave your Mac. Check the law where you are first: many places require telling the other person.</p>
+				</div>
+				<figure class="shot">
+					<img src="/assets/screens/history-1180.webp"
+						srcset="/assets/screens/history-1180.webp 1180w, /assets/screens/history-2360.webp 2360w"
+						sizes="(min-width: 900px) 37rem, calc(100vw - 2rem)"
+						width="1180" height="760" loading="lazy"
+						alt="Sipper's call history for today and yesterday: completed, missed, unanswered and busy calls with their lines and durations, two of them recorded.">
+				</figure>
+			</div>
+		</section>
+
+		<section class="section" aria-labelledby="lines">
+			<div class="wrap">
+				<div class="split flip">
+					<div>
+						<h2 id="lines">Every line you have, in one app</h2>
+						<p class="section-intro">Add as many SIP accounts as you have: your work extension, a personal number, a line for each client. Group them into profiles and switch a whole profile off at the end of the day. Its accounts stop ringing until you turn it back on.</p>
+						<p>If your provider gave you a username, password and server, that's all Sipper needs. The settings below are there when your phone system asks for them.</p>
+					</div>
+					<figure class="shot stage">
+						<img src="/assets/screens/menubar.webp" width="303" height="272" loading="lazy"
+							alt="Sipper's menu bar menu listing lines by profile, all registered, with two voicemails waiting on one, followed by New Call, Do Not Disturb and Re-register All.">
+					</figure>
+				</div>
+
+				<div class="table-scroll">
+					<table class="spec">
+						<caption class="visually-hidden">SIP features Sipper supports</caption>
+						<tbody>
+							<tr><th scope="row">Transports</th><td>UDP, TCP and TLS, chosen per account</td></tr>
+							<tr><th scope="row">Encryption</th><td>TLS for call setup and SRTP for audio, optional or required per account</td></tr>
+							<tr><th scope="row">NAT and firewalls</th><td>STUN and ICE, per account or with one STUN server for every account</td></tr>
+							<tr><th scope="row">Codecs</th><td>Opus and G.722 for wideband audio, and G.711 (PCMU and PCMA) for the widest compatibility, in the order you choose</td></tr>
+							<tr><th scope="row">Keypad tones</th><td>RFC 2833, falling back to SIP INFO</td></tr>
+							<tr><th scope="row">Voicemail</th><td>Message waiting indicator and a voicemail number for each account</td></tr>
+							<tr><th scope="row">Audio</th><td>Your choice of microphone, speaker and echo cancellation</td></tr>
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</section>
+
+		<section class="section tint" aria-labelledby="mac">
+			<div class="wrap">
+				<h2 id="mac">Fits in with the rest of your Mac</h2>
+				<div class="rows">
+					<div class="row">
+						<h3>Click a number to call it</h3>
+						<div>
+							<p>Sipper opens <code>tel:</code>, <code>sip:</code> and <code>sips:</code> links. Once you choose Sipper to open them, clicking a phone number on a web page opens the dial pad with the number filled in and the right line selected.</p>
+							<pre class="code"><code>&lt;a href="tel:+441632960123"&gt;01632 960123&lt;/a&gt;</code></pre>
+						</div>
+					</div>
+					<div class="row">
+						<h3>In the menu bar</h3>
+						<div>
+							<p>The menu bar icon shows whether your lines are registered. Start a call, answer, hang up or turn on Do Not Disturb from there. Sipper can open at login with its window hidden, so it's ready without getting in the way.</p>
+						</div>
+					</div>
+					<div class="row">
+						<h3>Import from FusionPBX</h3>
+						<div>
+							<p>If your phone system runs FusionPBX, the Sipper browser extension reads an extension's details from the admin page and adds it to Sipper in one click. Tick several on the extensions list to add them together. It works in Chrome, Edge, Brave, Vivaldi, Arc and Helium, and for now you install it from the source code.</p>
+							<p><a href="/support#extension">How to install the extension</a></p>
+						</div>
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<section class="section band" aria-labelledby="privacy">
+			<div class="wrap">
+				<h2 id="privacy">No Sipper account. No tracking.</h2>
+				<p class="section-intro">Sipper has no servers of its own. Your calls travel between your Mac and your phone provider, and nothing about you or your calls is sent to the developer.</p>
+				<ul class="facts">
+					<li><strong>Nothing to sign up for.</strong> You sign in to your own SIP provider, not to Sipper.</li>
+					<li><strong>No analytics, ads or trackers.</strong> Not in the app, and not on this website.</li>
+					<li><strong>Passwords stay in your Keychain.</strong> SIP passwords are stored by macOS, never in Sipper's own files.</li>
+					<li><strong>Recordings stay on your Mac.</strong> They're saved to the folder you choose and never synced.</li>
+					<li><strong>Code you can read.</strong> Sipper's source code is public, so you can check how it handles your data.</li>
+				</ul>
+				<p><a href="/privacy">Read the privacy policy</a></p>
+			</div>
+		</section>
+
+		<section class="section" id="get" aria-labelledby="get-title">
+			<div class="wrap">
+				<h2 id="get-title">Get Sipper</h2>
+				<p class="section-intro" data-prelaunch>Sipper is free. The first signed download is on its way; until then you can build it yourself from the source code with Xcode.</p>
+				<p class="section-intro" data-launched hidden>Sipper is free. It comes as a disk image signed with a Developer ID and notarised by Apple, so macOS opens it like any other downloaded app. Open the disk image and drag Sipper into Applications.</p>
+				<div class="actions">
+					<a class="button primary" href="/download" data-launched hidden>Download for Mac</a>
+					<a class="button" href="https://github.com/hybes/sipper/releases" data-launched hidden>All releases on GitHub</a>
+					<span class="status" data-prelaunch>Download coming soon</span>
+					<a class="button" href="https://github.com/hybes/sipper#building" data-prelaunch>Build it from source</a>
+				</div>
+				<dl class="reqs">
+					<div><dt>Price</dt><dd>Free</dd></div>
+					<div><dt>Mac</dt><dd>Apple silicon (M1 or later)</dd></div>
+					<div><dt>macOS</dt><dd>14 Sonoma or later</dd></div>
+					<div><dt>Phone service</dt><dd>A SIP account from a phone provider or your organisation's phone system</dd></div>
+				</dl>
+				<p class="fine">Questions before you start? <a href="/support">Visit Support</a>.</p>
+			</div>
+		</section>
+	</main>
+
+	<footer class="site-footer">
+		<div class="wrap">
+			<p>© 2026 Ben Hybert. Mac and macOS are trademarks of Apple Inc.</p>
+			<nav aria-label="Footer">
+				<a href="/support">Support</a>
+				<a href="/privacy">Privacy</a>
+				<a href="https://github.com/hybes/sipper">Source code</a>
+			</nav>
+		</div>
+	</footer>
+</body>
+</html>

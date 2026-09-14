@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Support · Sipper</title>
+	<meta name="description" content="Help with Sipper: adding your SIP account, fixing registration and audio problems, notifications, recordings and the FusionPBX browser extension.">
+	<link rel="canonical" href="https://sipper.dev/support">
+	<meta name="theme-color" content="#fbfbf9" media="(prefers-color-scheme: light)">
+	<meta name="theme-color" content="#0e1516" media="(prefers-color-scheme: dark)">
+	<link rel="icon" type="image/png" sizes="32x32" href="/assets/icon-32.png">
+	<link rel="icon" type="image/png" sizes="64x64" href="/assets/icon-64.png">
+	<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+	<link rel="stylesheet" href="/assets/site.css">
+	<meta property="og:type" content="website">
+	<meta property="og:site_name" content="Sipper">
+	<meta property="og:title" content="Sipper support">
+	<meta property="og:url" content="https://sipper.dev/support">
+	<meta property="og:image" content="https://sipper.dev/assets/og.png">
+</head>
+<body>
+	<a class="skip" href="#main">Skip to content</a>
+
+	<header class="site-header">
+		<div class="wrap">
+			<a class="brand" href="/"><img src="/assets/icon-64.png" alt="" width="32" height="32">Sipper</a>
+			<nav class="site-nav" aria-label="Main">
+				<a href="/support" aria-current="page">Support</a>
+				<a href="/privacy">Privacy</a>
+				<a href="https://github.com/hybes/sipper">Source code</a>
+			</nav>
+		</div>
+	</header>
+
+	<main id="main" class="page">
+		<div class="wrap prose">
+			<h1>Support</h1>
+			<p class="lede">Help with setting up and using Sipper. If the answer isn't here, <a href="https://github.com/hybes/sipper/issues">open a GitHub issue</a>.</p>
+
+			<nav class="toc" aria-label="On this page">
+				<ul>
+					<li><a href="#contact">Get in touch</a></li>
+					<li><a href="#requirements">Requirements</a></li>
+					<li><a href="#install">Installing</a></li>
+					<li><a href="#account">Adding your account</a></li>
+					<li><a href="#troubleshooting">Troubleshooting</a></li>
+					<li><a href="#extension">Browser extension</a></li>
+					<li><a href="#source">Building from source</a></li>
+				</ul>
+			</nav>
+
+			<h2 id="contact">Get in touch</h2>
+			<p><a href="https://github.com/hybes/sipper/issues">Open a GitHub issue</a>. To get to an answer quickly, include:</p>
+			<ul>
+				<li>your macOS version and Sipper version (Sipper › About Sipper)</li>
+				<li>what you expected to happen, and what happened instead</li>
+				<li>for problems registering or making calls, a log: reproduce the problem, then choose Save in Settings › Diagnostics</li>
+			</ul>
+			<p>GitHub issues are public. Logs can include account names, server addresses, phone numbers and authentication details. Remove those before attaching a log; never post passwords or account exports. Bug reports and feature requests are also welcome as <a href="https://github.com/hybes/sipper/issues">GitHub issues</a>.</p>
+
+			<h2 id="requirements">Requirements</h2>
+			<dl class="reqs">
+				<div><dt>Mac</dt><dd>Apple silicon (M1 or later)</dd></div>
+				<div><dt>macOS</dt><dd>14 Sonoma or later</dd></div>
+				<div><dt>Phone service</dt><dd>A SIP account from a phone provider or your organisation's phone system (PBX)</dd></div>
+			</dl>
+
+			<h2 id="install">Installing and updating</h2>
+			<ol>
+				<li>Download Sipper from <a href="/download">sipper.dev/download</a>.</li>
+				<li>Open the disk image and drag Sipper into the Applications folder.</li>
+				<li>Open Sipper from Applications. The first time, macOS asks you to confirm opening an app downloaded from the internet.</li>
+			</ol>
+			<p>To update, download the latest version and replace the copy in Applications. Your accounts, contacts and history are kept. Every version is listed on <a href="https://github.com/hybes/sipper/releases">GitHub</a>.</p>
+
+			<h2 id="account">Adding your SIP account</h2>
+			<p>Your provider or IT team gives you these details. They go by different names, so alternatives are in brackets.</p>
+			<dl class="reqs">
+				<div><dt>Username</dt><dd>Often your extension number (SIP user, extension). If you're also given an authentication username, enter that too.</dd></div>
+				<div><dt>Password</dt><dd>Your SIP password (secret), not the password for your provider's website.</dd></div>
+				<div><dt>Domain</dt><dd>The part after the @ in your SIP address (SIP domain, realm).</dd></div>
+				<div><dt>Server</dt><dd>Only needed if it's different from the domain (registrar, proxy, outbound proxy).</dd></div>
+				<div><dt>Port and transport</dt><dd>UDP on port 5060 unless you're told otherwise. TLS normally uses port 5061.</dd></div>
+			</dl>
+			<ol>
+				<li>Click <strong>+</strong> at the bottom of Sipper's sidebar and choose Add Account.</li>
+				<li>Enter the details and save the account.</li>
+				<li>The sidebar shows whether the account has registered. Once it has, you can make and receive calls.</li>
+			</ol>
+
+			<h2 id="troubleshooting">Troubleshooting</h2>
+
+			<h3 id="register">My account won't register</h3>
+			<ul>
+				<li>Check the username, password, domain and server character by character. The domain and server are easy to mix up.</li>
+				<li>Make sure the transport and port match what your provider expects.</li>
+				<li>If your phone system uses TLS with a self-signed certificate, turn off Verify TLS certificates in Settings › Network. Only do this for a server you trust.</li>
+				<li>After changing anything, Control-click the account in the sidebar and choose Re-register.</li>
+				<li>Settings › Diagnostics shows the messages exchanged with the server. A 403 response, or a 401 that repeats after Sipper sends your password, usually means the credentials are wrong.</li>
+			</ul>
+
+			<h3 id="audio">There's no audio, or only one person can hear the other</h3>
+			<ul>
+				<li>Check that Sipper is allowed to use the microphone in System Settings › Privacy &amp; Security › Microphone.</li>
+				<li>Check the microphone and speaker selected in Settings › Audio.</li>
+				<li>One-way audio is usually caused by a router or firewall. Edit the account and turn on Use ICE, or enter a STUN server your provider recommends. Switching the transport to TCP or TLS can also help.</li>
+			</ul>
+
+			<h3 id="notifications">Incoming calls don't show a notification</h3>
+			<p>Notifications may be turned off for Sipper. Settings › General shows whether macOS allows them and can send a test. To turn them on, go to System Settings › Notifications › Sipper. The floating call alert and ringtone work either way.</p>
+
+			<h3 id="busy">Callers get a busy signal</h3>
+			<p>Do Not Disturb turns incoming calls away as busy. Turn it off in the Call menu (<kbd aria-hidden="true">⌘</kbd><kbd aria-hidden="true">⇧</kbd><kbd aria-hidden="true">D</kbd><span class="visually-hidden">Command Shift D</span>) or from Sipper's menu bar icon.</p>
+
+			<h3 id="links">Clicking a phone number opens a different app</h3>
+			<p>Sipper can open <code>tel:</code>, <code>sip:</code> and <code>sips:</code> links. When macOS asks which app should open one, choose Sipper.</p>
+
+			<h3 id="recordings">Where are my recordings?</h3>
+			<p>In the folder chosen in Settings › Recording. In History, recorded calls have Play Recording and Show Recording in Finder actions.</p>
+
+			<h2 id="extension">The FusionPBX browser extension</h2>
+			<p>The extension adds FusionPBX extensions to Sipper without retyping them. It works in Chrome, Edge, Brave, Vivaldi, Arc and Helium, and is installed from Sipper's source code for now.</p>
+			<ol>
+				<li>Download the <a href="https://github.com/hybes/sipper">source code</a> and open <code>chrome://extensions</code> (or your browser's extensions page).</li>
+				<li>Turn on Developer mode, choose Load unpacked and select the <code>extension</code> folder.</li>
+				<li>In FusionPBX, open Accounts › Extensions, open an extension and click the Sipper button in the browser toolbar.</li>
+				<li>Check the details and click Add to Sipper. On the extensions list you can tick several and add them together.</li>
+			</ol>
+			<p>The browser asks once whether it may open Sipper. Your FusionPBX user needs permission to see extension passwords; without it, the extension asks you to type the password.</p>
+
+			<h2 id="source">Building from source</h2>
+			<p>Sipper's <a href="https://github.com/hybes/sipper">source code</a> is on GitHub, with build instructions in its README. You'll need Xcode 16 or later, XcodeGen and Homebrew. Sign your build with an Apple Development certificate, even a free one: otherwise macOS asks for Keychain access to your SIP passwords after every rebuild.</p>
+		</div>
+	</main>
+
+	<footer class="site-footer">
+		<div class="wrap">
+			<p>© 2026 Ben Hybert. Mac and macOS are trademarks of Apple Inc.</p>
+			<nav aria-label="Footer">
+				<a href="/support" aria-current="page">Support</a>
+				<a href="/privacy">Privacy</a>
+				<a href="https://github.com/hybes/sipper">Source code</a>
+			</nav>
+		</div>
+	</footer>
+</body>
+</html>

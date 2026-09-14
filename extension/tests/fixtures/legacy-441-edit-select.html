@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<link rel="stylesheet" type="text/css" href="/resources/bootstrap/css/bootstrap.min.css">
+<link rel="stylesheet" type="text/css" href="/resources/bootstrap/css/bootstrap-datetimepicker.min.css" />
+<link rel="stylesheet" type="text/css" href="/resources/bootstrap/css/bootstrap-colorpicker.min.css">
+<link rel="stylesheet" type="text/css" href="/themes/default/css.php">
+<link rel='icon' href='/themes/default/favicon.ico'>
+
+<title>Extension - FusionPBX</title>
+
+<script language="JavaScript" type="text/javascript" src="/resources/jquery/jquery-1.11.1.js"></script>
+<script language="JavaScript" type="text/javascript" src="/resources/jquery/jquery.autosize.input.js"></script>
+<script language="JavaScript" type="text/javascript" src="/resources/momentjs/moment.js"></script>
+<script language="JavaScript" type="text/javascript">
+	$(document).ready(function() {
+		$(".domain_selector_domain").click(function() { show_domains(); });
+	});
+</script>
+</head>
+<body onload="">
+	<div id="domains_container">
+		<div id="domains_block">
+			<div id="domains_list">
+				<div id="other.example.com" class='domains_list_item' style='background-color: #ffffff' onclick="document.location.href='/core/domain_settings/domains.php?domain_uuid=0a1b2c3d-0000-4000-8000-000000000001&domain_change=true';">other.example.com</div>
+				<div id="tenant.example.com" class='domains_list_item' style='background-color: #eeeeee; font-weight: bold;' onclick="document.location.href='/core/domain_settings/domains.php?domain_uuid=0a1b2c3d-0000-4000-8000-000000000002&domain_change=true';">tenant.example.com</div>
+			</div>
+		</div>
+	</div>
+	<table width='100%' border='0' cellpadding='0' cellspacing='0' class='header'>
+		<tr>
+			<td class='header_top' width='100%'>
+				<div class='header_left'><a href='/'><img src='/themes/default/images/logo.png' alt='FusionPBX'></a></div>
+				<div class='header_right'>
+
+					<span class='pull-right hidden-xs' style='white-space: nowrap;'>Welcome admin | <a href='/logout.php'>Logout</a></span>
+				</div>
+			</td>
+		</tr>
+	</table>
+	<div id='main_content'>
+<form method='post' name='frm' id='frm' action=''>
+<table width='100%' border='0' cellpdding='0' cellspacing='0'>
+<tr>
+<td width='30%' nowrap='nowrap' align='left' valign='top'><b>Extension</b></td>
+<td width='70%' align='right' valign='top'>
+	<input type='button' class='btn' alt='Back' onclick="window.location='extensions.php'" value='Back'>
+	<input type='button' class='btn' alt='Copy' onclick="copy_extension();" value='Copy'>
+	<input type='button' class='btn' value='Save' onclick='submit_form();'>
+	<br /><br />
+</td>
+</tr>
+<tr>
+<td class='vncellreq' valign='top' align='left' nowrap='nowrap'>
+    Extension
+</td>
+<td class='vtable' align='left'>
+    <input class='formfld' type='text' name='extension' autocomplete='off' maxlength='255' value="1002" required='required'>
+<br />
+Enter the extension number.
+</td>
+</tr>
+<tr>
+<td class='vncell' valign='top' align='left' nowrap='nowrap'>
+    Number Alias
+</td>
+<td class='vtable' align='left'>
+    <input class='formfld' type='number' name='number_alias' autocomplete='off' maxlength='255' min='0' step='1' value="">
+<br />
+Optional number alias.
+</td>
+</tr>
+<tr>
+<td class='vncellreq' valign='top' align='left' nowrap='nowrap'>
+    Password
+</td>
+<td class='vtable' align='left'>
+    <input class='formfld' type='password' name='password' id='password' autocomplete='off' onmouseover="this.type='text';" onfocus="this.type='text';" onmouseout="if (!$(this).is(':focus')) { this.type='password'; }" onblur="this.type='password';" maxlength='50' value="legacy-1002">
+    <br />
+    Enter the password here.
+</td>
+</tr>
+<tr>
+<td class='vncellreq' valign='top' align='left' nowrap='nowrap'>
+    Voicemail Password
+</td>
+<td class='vtable' align='left'>
+    <input class='formfld' type='text' name='voicemail_password' id='voicemail_password' autocomplete='off' onmouseover="this.type='text';" onmouseout="if (!$(this).is(':focus')) { this.type='password'; }" maxlength='255' value='1234'>
+<br />
+Enter the voicemail password here.
+</td>
+</tr>
+<tr>
+<td class='vncell' valign='top' align='left' nowrap='nowrap'>
+    Effective Caller ID Name
+</td>
+<td class='vtable' align='left'>
+    <input class='formfld' type='text' name='effective_caller_id_name' maxlength='255' value="Front Desk">
+<br />
+Enter the effective caller ID name here.
+</td>
+</tr>
+<tr>
+<td class='vncell' valign='top' align='left' nowrap='nowrap'>
+    Effective Caller ID Number
+</td>
+<td class='vtable' align='left'>
+    <input class='formfld' type='text' name='effective_caller_id_number' min='0' step='1' maxlength='255' value="1002">
+<br />
+Enter the effective caller ID number here.
+</td>
+</tr>
+<tr>
+<td class='vncell' valign='top' align='left' nowrap='nowrap'>
+    Outbound Caller ID Name
+</td>
+<td class='vtable' align='left'>
+    <input class='formfld' type='text' name='outbound_caller_id_name' maxlength='255' value="">
+<br />
+Enter the outbound caller ID name here.
+</td>
+</tr>
+<tr>
+<td class='vncell' valign='top' align='left' nowrap='nowrap'>
+    Outbound Caller ID Number
+</td>
+<td class='vtable' align='left'>
+    <input class='formfld' type='text' name='outbound_caller_id_number' maxlength='255' min='0' step='1' value="">
+<br />
+Enter the outbound caller ID number here.
+</td>
+</tr>
+<tr>
+<td class='vncell' valign='top' align='left' nowrap='nowrap'>
+	Advanced
+</td>
+<td class='vtable' align='left'>
+	<input type='button' class='btn' value='Show' onclick="show_advanced();">
+	<div id='show_advanced' style='display: none;'>
+	<table width='100%' border='0' cellpadding='0' cellspacing='0'>
+<tr>
+<td class='vncell' valign='top' align='left' nowrap='nowrap'>
+    Domain
+</td>
+<td class='vtable' align='left'>
+    <select class='formfld' name='domain_uuid'>
+    <option value='0a1b2c3d-0000-4000-8000-000000000001'>other.example.com</option>
+    <option value='0a1b2c3d-0000-4000-8000-000000000002' selected='selected'>tenant.example.com</option>
+    </select>
+<br />
+Select the domain for this extension.
+</td>
+</tr>
+<tr>
+<td class='vncellreq' valign='top' align='left' nowrap='nowrap'>
+    User Context
+</td>
+<td class='vtable' align='left'>
+    <input class='formfld' type='text' name='user_context' maxlength='255' value="default" required='required'>
+<br />
+Enter the user context here.
+</td>
+</tr>
+	</table>
+	</div>
+</td>
+</tr>
+<tr>
+<td class='vncellreq' valign='top' align='left' nowrap='nowrap'>
+    Enabled
+</td>
+<td class='vtable' align='left'>
+    <select class='formfld' name='enabled'>
+    <option value='true' selected='selected'>True</option>
+    <option value='false'>False</option>
+    </select>
+<br />
+Set the status of this extension.
+</td>
+</tr>
+<tr>
+<td class='vncell' valign='top' align='left' nowrap='nowrap'>
+    Description
+</td>
+<td class='vtable' align='left'>
+    <textarea class='formfld' name='description' rows='4'></textarea>
+<br />
+Enter the description.
+</td>
+</tr>
+	<tr>
+		<td colspan='2' align='right'>
+		<input type='hidden' name='extension_uuid' value='4a7d3b2f-6c8e-4d9f-8b1c-2d3e4f5a6b7c'>
+		<input type='hidden' name='id' id='id' value='4a7d3b2f-6c8e-4d9f-8b1c-2d3e4f5a6b7c'>		<input type='hidden' name='delete_type' id='delete_type' value=''>		<input type='hidden' name='delete_uuid' id='delete_uuid' value=''>			<br>			<input type='button' class='btn' value='Save' onclick='submit_form();'>
+		</td>
+	</tr></table><br><br></form><script>
+	$(window).keypress(function(event){
+		if (event.which == 13) { submit_form(); }
+	});
+	function submit_form() {
+		$('input:password').css('visibility','hidden');
+		$('input:password').attr({type:'text'});
+		$('form#frm').submit();
+	}
+</script>
+
+	</div>
+	<div id='footer'><span class='footer'>&copy; Copyright 2008 - 2019 FusionPBX. All rights reserved.</span></div>
+</body>
+</html>

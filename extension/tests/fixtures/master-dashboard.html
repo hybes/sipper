@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html xmlns='http://www.w3.org/1999/xhtml' xml:lang='en' lang='en'>
+<head>
+	<meta name="robots" content="noindex, nofollow, noarchive" />
+	<meta http-equiv="content-type" content="text/html; charset=utf-8">
+	<meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no'>
+	<link rel='stylesheet' type='text/css' href='/resources/bootstrap/css/bootstrap.min.css.php'>
+	<link rel='stylesheet' type='text/css' href='/resources/fontawesome/css/all.min.css.php'>
+	<link rel='stylesheet' type='text/css' href='/themes/default/css.php?updated=202608261400'>
+	<link rel='icon' href='/themes/default/favicon.ico'>
+	<title>Dashboard - FusionPBX</title>
+	<script language='JavaScript' type='text/javascript' src='/resources/jquery/jquery.min.js.php'></script>
+	<script language='JavaScript' type='text/javascript' src='/resources/bootstrap/js/bootstrap.min.js.php'></script>
+	<script language='JavaScript' type='text/javascript' src='/resources/javascript/select_group_option.js'></script>
+	<script language='JavaScript' type='text/javascript'>
+		function hide_password_fields() {
+			var password_fields = document.querySelectorAll("input[type='password']");
+			for (var p = 0, max = password_fields.length; p < max; p++) {
+				password_fields[p].style.visibility = 'hidden';
+				password_fields[p].type = 'text';
+			}
+		}
+		window.addEventListener('beforeunload', function(e){
+			hide_password_fields();
+		});
+	</script>
+</head>
+<body>
+<div id='background-image'></div><div id='background-color'></div><div id='message_container'></div>
+<div id='domains_container'><input type='hidden' id='domains_visible' value='0'><div id='domains_block'><div id='domains_header'><a id='domains_title' href='/core/domains/domains.php'>Domains<div class='count' id='domain_count'></div></a><input type='text' id='domains_search' class='formfld' placeholder='Search'></div><div id='domains_list'></div></div></div>
+<div id='qr_code_container' style='display: none;'></div>
+<div id='body_header'>
+	<div id='body_header_brand_text'><a href='/'>FusionPBX</a></div>
+	<a href='select:domain' onclick='event.preventDefault();' title='Open Selector' class='header_domain_selector_domain'><i class='fa-solid fa-earth-americas fa-fw' style='margin-right: 5px;'></i><span class='d-none d-sm-inline'>tenant.example.com</span></a>
+	<a href='show:usermenu' onclick="event.preventDefault();" title='admin' class='header_user'><i class='fa-solid fa-user-circle fa-fw'></i><span class='d-none d-sm-inline'>admin</span></a>
+</div>
+<div id='main_content'>
+<div class='action_bar' id='action_bar'>
+	<div class='heading'><b>Dashboard</b></div>
+</div>
+<div class='hud_box'><div class='hud_content'><span class='hud_title'>System Status</span><span class='hud_stat'>OK</span></div></div>
+<div class='hud_box'><div class='hud_content'><span class='hud_title'>Extensions</span><span class='hud_stat'>42</span></div></div>
+
+</div>
+<div id='footer'><span class='footer'>&copy; Copyright 2008 - 2026 <a href='http://www.fusionpbx.com' target='_blank'>FusionPBX</a>. All rights reserved.</span></div>
+</body>
+</html>

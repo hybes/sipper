@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html xmlns='http://www.w3.org/1999/xhtml' xml:lang='en' lang='en'>
+<head>
+	<meta name="robots" content="noindex, nofollow, noarchive" />
+	<meta http-equiv="content-type" content="text/html; charset=utf-8">
+	<meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no'>
+	<link rel='stylesheet' type='text/css' href='/resources/bootstrap/css/bootstrap.min.css.php'>
+	<link rel='stylesheet' type='text/css' href='/resources/fontawesome/css/all.min.css.php'>
+	<link rel='stylesheet' type='text/css' href='/themes/default/css.php?updated=202608261400'>
+	<link rel='icon' href='/themes/default/favicon.ico'>
+	<title>Extensions - FusionPBX</title>
+	<script language='JavaScript' type='text/javascript' src='/resources/jquery/jquery.min.js.php'></script>
+	<script language='JavaScript' type='text/javascript' src='/resources/bootstrap/js/bootstrap.min.js.php'></script>
+	<script language='JavaScript' type='text/javascript' src='/resources/javascript/select_group_option.js'></script>
+	<script language='JavaScript' type='text/javascript'>
+		function hide_password_fields() {
+			var password_fields = document.querySelectorAll("input[type='password']");
+			for (var p = 0, max = password_fields.length; p < max; p++) {
+				password_fields[p].style.visibility = 'hidden';
+				password_fields[p].type = 'text';
+			}
+		}
+		window.addEventListener('beforeunload', function(e){
+			hide_password_fields();
+		});
+	</script>
+</head>
+<body>
+<div id='background-image'></div><div id='background-color'></div><div id='message_container'></div>
+<div id='domains_container'><input type='hidden' id='domains_visible' value='0'><div id='domains_block'><div id='domains_header'><a id='domains_title' href='/core/domains/domains.php'>Domains<div class='count' id='domain_count'></div></a><input type='text' id='domains_search' class='formfld' placeholder='Search'></div><div id='domains_list'></div></div></div>
+<div id='qr_code_container' style='display: none;'></div>
+<div id='body_header'>
+	<div id='body_header_brand_text'><a href='/'>FusionPBX</a></div>
+	<a href='select:domain' onclick='event.preventDefault();' title='Open Selector' class='header_domain_selector_domain'><i class='fa-solid fa-earth-americas fa-fw' style='margin-right: 5px;'></i><span class='d-none d-sm-inline'>tenant.example.com</span></a>
+	<a href='show:usermenu' onclick="event.preventDefault();" title='admin' class='header_user'><i class='fa-solid fa-user-circle fa-fw'></i><span class='d-none d-sm-inline'>admin</span></a>
+</div>
+<div id='main_content'>
+<b>Extensions</b>
+<br><br>
+Use the extensions to configure the SIP accounts and settings.
+<br /><br />
+<form id='form_list' method='post'>
+<input type='hidden' id='action' name='action' value=''>
+<div class='card'>
+<table class='list'>
+<tr class='list-header'>
+	<th class='checkbox'>
+		<input type='checkbox' id='checkbox_all' name='checkbox_all' onclick='list_all_toggle(); checkbox_on_change(this);' >
+	</th>
+<th>Domain</th>
+<th>&nbsp;</th>
+<th  nowrap='nowrap'>
+	<a href='?order_by=extension&order=asc&show=all'>Extension
+	</a>
+</th>
+<th class='hide-xs' nowrap='nowrap'>
+	<a href='?order_by=effective_caller_id_name&order=asc&show=all'>Effective Caller ID Name
+	</a>
+</th>
+<th class='hide-sm-dn' nowrap='nowrap'>
+	<a href='?order_by=outbound_caller_id_name&order=asc&show=all'>Outbound Caller ID Name
+	</a>
+</th>
+<th class='hide-md-dn' nowrap='nowrap'>
+	<a href='?order_by=outbound_caller_id_number&order=asc&show=all'>Outbound Caller ID Number
+	</a>
+</th>
+<th  nowrap='nowrap'>
+	<a href='?order_by=call_group&order=asc&show=all'>Call Group
+	</a>
+</th>
+<th class='hide-md-dn' nowrap='nowrap'>
+	<a href='?order_by=device_address&order=asc&show=all'>Device Address
+	</a>
+</th>
+<th class='hide-md-dn' nowrap='nowrap'>
+	<a href='?order_by=device_template&order=asc&show=all'>Device Template
+	</a>
+</th>
+<th  nowrap='nowrap'>
+	<a href='?order_by=user_context&order=asc'>User Context
+	</a>
+</th>
+<th class='center' nowrap='nowrap'>
+	<a href='?order_by=enabled&order=asc&show=all'>Enabled
+	</a>
+</th>
+<th class='hide-sm-dn' nowrap='nowrap'>
+	<a href='?order_by=description&order=asc&show=all'>Description
+	</a>
+</th>
+</tr>
+<tr class='list-row' href='extension_edit.php?id=3f6c2a1e-5b7d-4c8e-9a0b-1c2d3e4f5a6b&show=all'>
+	<td class='checkbox'>
+		<input type='checkbox' name='extensions[0][checked]' id='checkbox_0' value='true' onclick="checkbox_on_change(this); if (!this.checked) { document.getElementById('checkbox_all').checked = false; }">
+		<input type='hidden' name='extensions[0][uuid]' value='3f6c2a1e-5b7d-4c8e-9a0b-1c2d3e4f5a6b' />
+	</td>
+	<td>tenant.example.com</td>
+	<td class='middle button center' style='text-align: center; cursor: help;' title="Registered">		<div style='display: inline-block; width: 8px; height: 8px; line-height: 8px; border-radius: 50%; background-color: #12d600; border: 1px solid #10c700; margin-top: 4px; '></div>
+</td>
+	<td><a href='extension_edit.php?id=3f6c2a1e-5b7d-4c8e-9a0b-1c2d3e4f5a6b&show=all' title="Edit">1001</a>	</td>
+	<td class='hide-xs'>Alex Morgan&nbsp;</td>
+	<td class='hide-sm-dn'>Example Ltd&nbsp;</td>
+	<td class='hide-md-dn'>441onward&nbsp;</td>
+	<td>&nbsp;</td>
+	<td class='hide-md-dn'><a href='/app/devices/device_edit.php?id='></td>
+	<td class='hide-md-dn'><a href='/app/devices/device_edit.php?id='></td>
+	<td>tenant.example.com</td>
+	<td class='no-link center'><button type='submit' class='btn btn-default link' title='Toggle' onclick="list_self_check('checkbox_0'); list_action_set('toggle'); list_form_submit('form_list')"><span class='button-label'>True</span></button>	</td>
+	<td class='description overflow hide-sm-dn'>Desk phone</td>
+</tr>
+<tr class='list-row' href='extension_edit.php?id=4a7d3b2f-6c8e-4d9f-8b1c-2d3e4f5a6b7c&show=all&domain_uuid=0a1b2c3d-0000-4000-8000-000000000001&domain_change=true'>
+	<td class='checkbox'>
+		<input type='checkbox' name='extensions[1][checked]' id='checkbox_1' value='true' onclick="checkbox_on_change(this); if (!this.checked) { document.getElementById('checkbox_all').checked = false; }">
+		<input type='hidden' name='extensions[1][uuid]' value='4a7d3b2f-6c8e-4d9f-8b1c-2d3e4f5a6b7c' />
+	</td>
+	<td>other.example.com</td>
+	<td class='middle button center' style='text-align: center; cursor: help;' title="Unregistered"><div style='display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: #e21b1b; border: 1px solid #c01717; margin-top: 4px;'></div>
+</td>
+	<td><a href='extension_edit.php?id=4a7d3b2f-6c8e-4d9f-8b1c-2d3e4f5a6b7c&show=all&domain_uuid=0a1b2c3d-0000-4000-8000-000000000001&domain_change=true' title="Edit">1002</a>	</td>
+	<td class='hide-xs'>Front &amp; Desk&nbsp;</td>
+	<td class='hide-sm-dn'>&nbsp;</td>
+	<td class='hide-md-dn'>&nbsp;</td>
+	<td>&nbsp;</td>
+	<td class='hide-md-dn'><a href='/app/devices/device_edit.php?id='></td>
+	<td class='hide-md-dn'><a href='/app/devices/device_edit.php?id='></td>
+	<td>other.example.com</td>
+	<td class='no-link center'><button type='submit' class='btn btn-default link' title='Toggle' onclick="list_self_check('checkbox_1'); list_action_set('toggle'); list_form_submit('form_list')"><span class='button-label'>False</span></button>	</td>
+	<td class='description overflow hide-sm-dn'>Lobby</td>
+</tr>
+<tr class='list-row' href='extension_edit.php?id=5b8e4c3a-7d9f-4e0a-9c2d-3e4f5a6b7c8d&show=all'>
+	<td class='checkbox'>
+		<input type='checkbox' name='extensions[2][checked]' id='checkbox_2' value='true' onclick="checkbox_on_change(this); if (!this.checked) { document.getElementById('checkbox_all').checked = false; }">
+		<input type='hidden' name='extensions[2][uuid]' value='5b8e4c3a-7d9f-4e0a-9c2d-3e4f5a6b7c8d' />
+	</td>
+	<td>tenant.example.com</td>
+	<td class='middle button center' style='text-align: center; cursor: help;' title="Unregistered"><div style='display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: #e21b1b; border: 1px solid #c01717; margin-top: 4px;'></div>
+</td>
+	<td><a href='extension_edit.php?id=5b8e4c3a-7d9f-4e0a-9c2d-3e4f5a6b7c8d&show=all' title="Edit">1003</a>	</td>
+	<td class='hide-xs'>&nbsp;</td>
+	<td class='hide-sm-dn'>&nbsp;</td>
+	<td class='hide-md-dn'>&nbsp;</td>
+	<td>&nbsp;</td>
+	<td class='hide-md-dn'><a href='/app/devices/device_edit.php?id=6c9f5d4b-8e0a-4f1b-9d3e-4f5a6b7c8d9e'>00:11:22:33:44:55</td>
+	<td class='hide-md-dn'><a href='/app/devices/device_edit.php?id=6c9f5d4b-8e0a-4f1b-9d3e-4f5a6b7c8d9e'>yealink/t46</td>
+	<td>tenant.example.com</td>
+	<td class='no-link center'><button type='submit' class='btn btn-default link' title='Toggle' onclick="list_self_check('checkbox_2'); list_action_set('toggle'); list_form_submit('form_list')"><span class='button-label'>True</span></button>	</td>
+	<td class='description overflow hide-sm-dn'></td>
+</tr>
+</table>
+</div>
+<div align='center'><span class='paging'><input id='paging_page_num' class='formfld' type='text' value='1'> of 1</span></div>
+<br />
+</form>
+
+</div>
+<div id='footer'><span class='footer'>&copy; Copyright 2008 - 2026 <a href='http://www.fusionpbx.com' target='_blank'>FusionPBX</a>. All rights reserved.</span></div>
+</body>
+</html>

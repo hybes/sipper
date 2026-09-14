@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<link rel="stylesheet" type="text/css" href="/resources/bootstrap/css/bootstrap.min.css">
+<link rel="stylesheet" type="text/css" href="/resources/bootstrap/css/bootstrap-datetimepicker.min.css" />
+<link rel="stylesheet" type="text/css" href="/resources/bootstrap/css/bootstrap-colorpicker.min.css">
+<link rel="stylesheet" type="text/css" href="/themes/default/css.php">
+<link rel='icon' href='/themes/default/favicon.ico'>
+
+<title>Extensions - FusionPBX</title>
+
+<script language="JavaScript" type="text/javascript" src="/resources/jquery/jquery-1.11.1.js"></script>
+<script language="JavaScript" type="text/javascript" src="/resources/jquery/jquery.autosize.input.js"></script>
+<script language="JavaScript" type="text/javascript" src="/resources/momentjs/moment.js"></script>
+<script language="JavaScript" type="text/javascript">
+	$(document).ready(function() {
+		$(".domain_selector_domain").click(function() { show_domains(); });
+	});
+</script>
+</head>
+<body onload="">
+	<div id="domains_container">
+		<div id="domains_block">
+			<div id="domains_list">
+				<div id="other.example.com" class='domains_list_item' style='background-color: #ffffff' onclick="document.location.href='/core/domain_settings/domains.php?domain_uuid=0a1b2c3d-0000-4000-8000-000000000001&domain_change=true';">other.example.com</div>
+				<div id="tenant.example.com" class='domains_list_item' style='background-color: #eeeeee; font-weight: bold;' onclick="document.location.href='/core/domain_settings/domains.php?domain_uuid=0a1b2c3d-0000-4000-8000-000000000002&domain_change=true';">tenant.example.com</div>
+			</div>
+		</div>
+	</div>
+	<table width='100%' border='0' cellpadding='0' cellspacing='0' class='header'>
+		<tr>
+			<td class='header_top' width='100%'>
+				<div class='header_left'><a href='/'><img src='/themes/default/images/logo.png' alt='FusionPBX'></a></div>
+				<div class='header_right'>
+					<span class='pull-right hidden-xs' style='white-space: nowrap;'><a href='#' class='domain_selector_domain' title='Open Selector'>tenant.example.com</a></span>
+					<span class='pull-right visible-xs'><a href='#' class='domain_selector_domain' title='Open Selector'>tenant.example.com</a></span>
+					<span class='pull-right hidden-xs' style='white-space: nowrap;'>Welcome admin | <a href='/logout.php'>Logout</a></span>
+				</div>
+			</td>
+		</tr>
+	</table>
+	<div id='main_content'>
+<table width='100%' border='0' cellpadding='0' cellspacing=''>
+	<tr>
+	<td align='left' width='100%'>
+		<b>Extensions</b>
+		<br /><br />
+		Use the extensions to configure the SIP accounts and settings.
+	</td>
+	</tr>
+</table>
+<br />
+<form name='frm' method='post' action='extension_delete.php'>
+<table class='tr_hover' width='100%' border='0' cellpadding='0' cellspacing='0'>
+<tr>
+<th style='width: 30px; text-align: center; padding: 0px;'><input type='checkbox' id='chk_all' onchange="(this.checked) ? check('all') : check('none');"></th><th><a href='?order_by=domain_name&order=asc'>Domain</a></th><th><a href='?order_by=extension&order=asc'>Extension</a></th><th><a href='?order_by=call_group&order=asc'>Call Group</a></th><th><a href='?order_by=user_context&order=asc'>User Context</a></th><th><a href='?order_by=description&order=asc'>Registered</a></th><th><a href='?order_by=enabled&order=asc'>Enabled</a></th><th><a href='?order_by=description&order=asc'>Description</a></th><td class='list_control_icon'>
+<a href='extension_edit.php' alt='Add'><img src='/themes/default/images/icon_add.png' alt='Add' border='0' align='absmiddle'></a><a href='javascript:void(0);' onclick="if (confirm('Do you really want to delete this?')) { document.forms.frm.submit(); }" alt='Delete'><img src='/themes/default/images/icon_delete.png' alt='Delete' border='0' align='absmiddle'></a></td>
+</tr>
+<tr  href='extension_edit.php?id=3f6c2a1e-5b7d-4c8e-9a0b-1c2d3e4f5a6b'>
+	<td valign='top' class='row_style0 tr_link_void' style='text-align: center; vertical-align: middle; padding: 0px;'>		<input type='checkbox' name='id[]' id='checkbox_3f6c2a1e-5b7d-4c8e-9a0b-1c2d3e4f5a6b' value='3f6c2a1e-5b7d-4c8e-9a0b-1c2d3e4f5a6b' onclick="if (!this.checked) { document.getElementById('chk_all').checked = false; }">	</td>	<td valign='top' class='row_style0'>tenant.example.com</td>
+	<td valign='top' class='row_style0'><a href='extension_edit.php?id=3f6c2a1e-5b7d-4c8e-9a0b-1c2d3e4f5a6b'>1001</a></td>
+	<td valign='top' class='row_style0'>&nbsp;</td>
+	<td valign='top' class='row_style0'>tenant.example.com</td>
+	<td valign='top' class='row_style0'>Yes (1)&nbsp;</td>
+	<td valign='top' class='row_style0'>True</td>
+	<td valign='top' class='row_stylebg' width='30%'>Desk phone&nbsp;</td>
+	<td class='list_control_icons'><a href='extension_edit.php?id=3f6c2a1e-5b7d-4c8e-9a0b-1c2d3e4f5a6b' alt='Edit'><img src='/themes/default/images/icon_edit.png' alt='Edit' border='0' align='absmiddle'></a><a href='extension_delete.php?id[]=3f6c2a1e-5b7d-4c8e-9a0b-1c2d3e4f5a6b' alt='Delete' onclick="return confirm('Do you really want to delete this?')"><img src='/themes/default/images/icon_delete.png' alt='Delete' border='0' align='absmiddle'></a></td>
+</tr>
+<tr  href='extension_edit.php?id=4a7d3b2f-6c8e-4d9f-8b1c-2d3e4f5a6b7c'>
+	<td valign='top' class='row_style1 tr_link_void' style='text-align: center; vertical-align: middle; padding: 0px;'>		<input type='checkbox' name='id[]' id='checkbox_4a7d3b2f-6c8e-4d9f-8b1c-2d3e4f5a6b7c' value='4a7d3b2f-6c8e-4d9f-8b1c-2d3e4f5a6b7c' onclick="if (!this.checked) { document.getElementById('chk_all').checked = false; }">	</td>	<td valign='top' class='row_style1'>other.example.com</td>
+	<td valign='top' class='row_style1'><a href='extension_edit.php?id=4a7d3b2f-6c8e-4d9f-8b1c-2d3e4f5a6b7c'>1002</a></td>
+	<td valign='top' class='row_style1'>&nbsp;</td>
+	<td valign='top' class='row_style1'>other.example.com</td>
+	<td valign='top' class='row_style1'>No&nbsp;</td>
+	<td valign='top' class='row_style1'>False</td>
+	<td valign='top' class='row_stylebg' width='30%'>Lobby&nbsp;</td>
+	<td class='list_control_icons'><a href='extension_edit.php?id=4a7d3b2f-6c8e-4d9f-8b1c-2d3e4f5a6b7c' alt='Edit'><img src='/themes/default/images/icon_edit.png' alt='Edit' border='0' align='absmiddle'></a><a href='extension_delete.php?id[]=4a7d3b2f-6c8e-4d9f-8b1c-2d3e4f5a6b7c' alt='Delete' onclick="return confirm('Do you really want to delete this?')"><img src='/themes/default/images/icon_delete.png' alt='Delete' border='0' align='absmiddle'></a></td>
+</tr>
+<tr>
+	<td colspan='20' class='list_control_icons'>
+<a href='extension_edit.php' alt='Add'><img src='/themes/default/images/icon_add.png' alt='Add' border='0' align='absmiddle'></a>	</td>
+</tr>
+</table>
+</form>
+
+	</div>
+	<div id='footer'><span class='footer'>&copy; Copyright 2008 - 2019 FusionPBX. All rights reserved.</span></div>
+</body>
+</html>
