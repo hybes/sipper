@@ -32,6 +32,7 @@ rm -f "$out"
        'package.json' 'package-lock.json' \
        '*.zip' '*.DS_Store' '.*'
 )
+zip -j -X -q "$out" "$root/LICENSE"
 
 echo "Wrote $out"
 unzip -Z1 "$out" | sed 's/^/  /'
