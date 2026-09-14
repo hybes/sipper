@@ -249,6 +249,22 @@ kbd {
 
 .fine { margin-top: 1rem; color: var(--ink-2); font-size: 0.95rem; }
 
+/* Download choices, each with its requirements beneath. The Worker decides which are shown. */
+.downloads {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	gap: 1.25rem 2.5rem;
+	margin-top: 1.75rem;
+}
+.downloads .fine { margin: 0.55rem 0 0; }
+.downloads .status {
+	display: flex;
+	align-items: center;
+	min-height: 2.75rem;
+	margin: 0;
+}
+
 /* Home page */
 
 .hero { padding-top: clamp(2.5rem, 7vw, 5rem); }

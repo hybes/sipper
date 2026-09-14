@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "check": "wrangler deploy --dry-run",
+    "test": "node --test \"test/*.test.js\"",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {

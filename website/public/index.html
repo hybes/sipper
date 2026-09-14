@@ -56,12 +56,49 @@
 			<div class="wrap">
 				<h1>Make and take SIP calls on your Mac.</h1>
 				<p class="lede">Sipper is a free phone app built for macOS. Enter the SIP details from your phone provider or office phone system and your Mac becomes your desk phone, with a dial pad, transfers, call history, contacts and recording.</p>
-				<div class="actions">
-					<a class="button primary" href="/download" data-launched hidden>Download for Mac</a>
-					<span class="status" data-prelaunch>Download coming soon</span>
-					<a class="button" href="https://github.com/hybes/sipper#building" data-prelaunch>Build it from source</a>
+				<div class="actions" data-prelaunch>
+					<span class="status">Download coming soon</span>
+					<a class="button" href="https://github.com/hybes/sipper#building">Build it from source</a>
 				</div>
-				<p class="fine">Free · macOS 14 Sonoma or later · Macs with Apple silicon</p>
+				<p class="fine" data-prelaunch>Free · macOS 14 Sonoma or later · Macs with Apple silicon</p>
+
+				<!-- Once there is a download, the Worker keeps only the block for the visitor's platform. -->
+				<div class="downloads" data-launched data-visitor="mac" hidden>
+					<div data-launched="mac" hidden>
+						<a class="button primary" href="/download/mac">Download for Mac</a>
+						<p class="fine">macOS 14 Sonoma or later · Macs with Apple silicon</p>
+					</div>
+					<p class="status" data-prelaunch="mac">Mac version coming soon</p>
+					<div data-launched="windows" hidden>
+						<a class="button" href="/download/windows">Download for Windows</a>
+						<p class="fine">Windows 10 or 11 · 64-bit (x64) PCs</p>
+					</div>
+					<p class="status" data-prelaunch="windows">Windows version coming soon</p>
+				</div>
+				<div class="downloads" data-launched data-visitor="windows" hidden>
+					<div data-launched="windows" hidden>
+						<a class="button primary" href="/download/windows">Download for Windows</a>
+						<p class="fine">Windows 10 or 11 · 64-bit (x64) PCs</p>
+					</div>
+					<p class="status" data-prelaunch="windows">Windows version coming soon</p>
+					<div data-launched="mac" hidden>
+						<a class="button" href="/download/mac">Download for Mac</a>
+						<p class="fine">macOS 14 Sonoma or later · Macs with Apple silicon</p>
+					</div>
+					<p class="status" data-prelaunch="mac">Mac version coming soon</p>
+				</div>
+				<div class="downloads" data-launched data-visitor="unknown" hidden>
+					<div data-launched="mac" hidden>
+						<a class="button primary" href="/download/mac">Download for Mac</a>
+						<p class="fine">macOS 14 Sonoma or later · Macs with Apple silicon</p>
+					</div>
+					<p class="status" data-prelaunch="mac">Mac version coming soon</p>
+					<div data-launched="windows" hidden>
+						<a class="button primary" href="/download/windows">Download for Windows</a>
+						<p class="fine">Windows 10 or 11 · 64-bit (x64) PCs</p>
+					</div>
+					<p class="status" data-prelaunch="windows">Windows version coming soon</p>
+				</div>
 
 				<figure class="shot hero-shot">
 					<img src="/assets/screens/dialer-1180.webp"
@@ -214,9 +251,16 @@
 			<div class="wrap">
 				<h2 id="get-title">Get Sipper</h2>
 				<p class="section-intro" data-prelaunch>Sipper is free. The first signed download is on its way; until then you can build it yourself from the source code with Xcode.</p>
-				<p class="section-intro" data-launched hidden>Sipper is free. It comes as a disk image signed with a Developer ID and notarised by Apple, so macOS opens it like any other downloaded app. Open the disk image and drag Sipper into Applications.</p>
+				<p class="section-intro" data-launched hidden>
+					Sipper is free.
+					<span data-launched="mac" hidden>On a Mac, it comes as a disk image signed with a Developer ID and notarised by Apple, so macOS opens it like any other downloaded app. Open the disk image and drag Sipper into Applications.</span>
+					<span data-launched="windows" hidden>On Windows, run the installer, which installs Sipper for your Windows user account.</span>
+					<span data-prelaunch="mac">A Mac version is coming soon.</span>
+					<span data-prelaunch="windows">A Windows version is coming soon.</span>
+				</p>
 				<div class="actions">
-					<a class="button primary" href="/download" data-launched hidden>Download for Mac</a>
+					<a class="button primary" href="/download/mac" data-launched="mac" hidden>Download for Mac</a>
+					<a class="button primary" href="/download/windows" data-launched="windows" hidden>Download for Windows</a>
 					<a class="button" href="https://github.com/hybes/sipper/releases" data-launched hidden>All releases on GitHub</a>
 					<span class="status" data-prelaunch>Download coming soon</span>
 					<a class="button" href="https://github.com/hybes/sipper#building" data-prelaunch>Build it from source</a>
@@ -225,6 +269,7 @@
 					<div><dt>Price</dt><dd>Free</dd></div>
 					<div><dt>Mac</dt><dd>Apple silicon (M1 or later)</dd></div>
 					<div><dt>macOS</dt><dd>14 Sonoma or later</dd></div>
+					<div data-launched="windows" hidden><dt>Windows</dt><dd>10 or 11, 64-bit (x64)</dd></div>
 					<div><dt>Phone service</dt><dd>A SIP account from a phone provider or your organisation's phone system</dd></div>
 				</dl>
 				<p class="fine">Questions before you start? <a href="/support">Visit Support</a>.</p>

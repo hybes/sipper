@@ -62,16 +62,27 @@
 			<dl class="reqs">
 				<div><dt>Mac</dt><dd>Apple silicon (M1 or later)</dd></div>
 				<div><dt>macOS</dt><dd>14 Sonoma or later</dd></div>
+				<div data-launched="windows" hidden><dt>Windows</dt><dd>10 or 11, 64-bit (x64)</dd></div>
 				<div><dt>Phone service</dt><dd>A SIP account from a phone provider or your organisation's phone system (PBX)</dd></div>
 			</dl>
 
 			<h2 id="install">Installing and updating</h2>
+			<h3 id="install-mac" data-launched="windows" hidden>On a Mac</h3>
 			<ol>
-				<li>Download Sipper from <a href="/download">sipper.dev/download</a>.</li>
+				<li>Download Sipper from <a href="/download/mac">sipper.dev/download/mac</a>.</li>
 				<li>Open the disk image and drag Sipper into the Applications folder.</li>
 				<li>Open Sipper from Applications. The first time, macOS asks you to confirm opening an app downloaded from the internet.</li>
 			</ol>
 			<p>To update, download the latest version and replace the copy in Applications. Your accounts, contacts and history are kept. Every version is listed on <a href="https://github.com/hybes/sipper/releases">GitHub</a>.</p>
+			<div data-launched="windows" hidden>
+				<h3 id="install-windows">On Windows</h3>
+				<ol>
+					<li>Download the installer from <a href="/download/windows">sipper.dev/download/windows</a>.</li>
+					<li>Run it. Sipper installs for your Windows user account, without administrator rights, and opens when it's done.</li>
+					<li>The installer isn't code-signed yet, so Windows may say it protected your PC. Choose More info, then Run anyway.</li>
+				</ol>
+				<p>To update, run the installer for the new version. Your accounts, contacts and history are kept. To open <code>tel:</code> and <code>sip:</code> links with Sipper, choose it in Windows Settings › Apps › Default apps; Settings › General › Phone links in Sipper takes you there.</p>
+			</div>
 
 			<h2 id="account">Adding your SIP account</h2>
 			<p>Your provider or IT team gives you these details. They go by different names, so alternatives are in brackets.</p>

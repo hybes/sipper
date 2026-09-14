@@ -210,11 +210,15 @@ make site           # local server on http://localhost:8787 (installs wrangler o
 make site-deploy    # deploy to your authenticated Cloudflare account
 ```
 
-For each release, attach the DMG from `make release` to a GitHub release, set
-`DOWNLOAD_URL` in `website/wrangler.jsonc` to the DMG's URL and run
-`make site-deploy`. sipper.dev/download then redirects to it and the pages show
-download buttons. While `DOWNLOAD_URL` is empty the pages say "Download coming
-soon" and /download goes to the Get Sipper section.
+For each release, attach the DMG from `make release` and the installer from the
+Windows workflow to a GitHub release, set `MAC_DOWNLOAD_URL` and
+`WINDOWS_DOWNLOAD_URL` in `website/wrangler.jsonc` to their URLs and run
+`make site-deploy`. sipper.dev/download then sends each visitor to the file for
+their computer (sipper.dev/download/mac and /download/windows pick one directly),
+and the pages lead with that platform's button and offer the other beside it.
+While a URL is empty, that platform's link goes to the Get Sipper section and the
+pages say it is coming soon; while both are empty the pages keep their
+pre-release wording. `npm --prefix website test` checks the platform detection.
 
 ## Project layout
 
