@@ -1,8 +1,8 @@
 # Sipper hand-off protocol
 
-This is the contract between the Sipper macOS app and anything that wants to add
-SIP accounts to it (the Chrome extension today, other tools later). Both sides
-implement exactly this document.
+This is the contract between the Sipper apps (Mac and Windows) and anything that
+wants to add SIP accounts to them (the Chrome extension today, other tools later).
+Both sides implement exactly this document.
 
 ## Transport
 
@@ -22,10 +22,11 @@ sipper://add-accounts?payload=<base64url(JSON)>
 
 ### 2. Chrome native messaging (optional, installed from Settings → Browser extension)
 
-Host name: `com.hybes.sipper`. The host executable is the Sipper app binary
-started with the extension origin as its first argument (Chrome does this
-automatically). Messages are the same JSON document (no base64), framed with a
-4-byte native-endian length prefix as Chrome specifies.
+Host name: `com.hybes.sipper`. On a Mac the host executable is the Sipper app
+binary; on Windows it is `sipper-browser-host.exe` in Sipper's `resources\engine`
+folder. Chrome starts it with the extension origin as its first argument.
+Messages are the same JSON document (no base64), framed with a 4-byte
+native-endian length prefix as Chrome specifies.
 
 Requests:
 
@@ -44,7 +45,9 @@ Responses:
 
 On `add-accounts` the host forwards the document to the running app through the
 URL scheme (so the app behaves identically for both transports) and replies
-`queued` once the app has been asked to open it.
+`queued` once the app has been asked to open it. Windows passes the link on a
+command line, so the Windows host refuses links longer than 32,000 characters
+(roughly 70 typical accounts) with an error asking for a smaller selection.
 
 ## Document
 
@@ -90,7 +93,7 @@ Field rules:
 | `accounts[]` | yes, ≥ 1 | Accounts to add. |
 | `username` | yes | SIP user part (the extension number). |
 | `domain` | yes | SIP domain / realm used in the AoR (`sip:username@domain`) and REGISTER. |
-| `password` | yes | SIP auth password. Stored in the macOS Keychain, never on disk in clear. |
+| `password` | yes | SIP auth password. Stored in the macOS Keychain, or on Windows encrypted with the Data Protection API; never on disk in clear. |
 | `authUsername` | no | Auth user if different from `username`. |
 | `server` | no | Registrar / outbound proxy host. Defaults to `domain`. When present the app registers to `domain` but sends traffic to `server`. |
 | `port` | no | Port on `server`. Default `5060`, or `5061` when `transport` is `tls`. |

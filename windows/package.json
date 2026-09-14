@@ -1,0 +1,74 @@
+{
+  "name": "sipper",
+  "productName": "Sipper",
+  "version": "0.1.0",
+  "description": "Sipper SIP softphone for Windows",
+  "private": true,
+  "type": "module",
+  "main": "src/main/main.js",
+  "author": {
+    "name": "Ben Hybert",
+    "email": "ben.hybert21@gmail.com"
+  },
+  "license": "GPL-3.0-or-later",
+  "homepage": "https://sipper.dev",
+  "repository": "github:hybes/sipper",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test \"tests/*.test.mjs\"",
+    "test:engine": "node --test \"tests/integration/*.test.mjs\"",
+    "test:e2e": "node --test --test-concurrency=1 \"tests/e2e/*.test.mjs\"",
+    "licences": "node scripts/copy-licences.mjs",
+    "dist": "node scripts/copy-licences.mjs && electron-builder --win nsis --x64 --publish never"
+  },
+  "build": {
+    "appId": "com.hybes.sipper",
+    "productName": "Sipper",
+    "copyright": "© 2026 Ben Hybert",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "resources/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "engine/build",
+        "to": "engine",
+        "filter": ["sipper-engine.exe", "sipper-browser-host.exe"]
+      },
+      {
+        "from": "build/licences",
+        "to": "Licenses"
+      }
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "resources/icon.png",
+      "executableName": "Sipper"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "Sipper-${version}-Setup.${ext}",
+      "shortcutName": "Sipper",
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh"
+    }
+  },
+  "devDependencies": {
+    "electron": "44.3.0",
+    "electron-builder": "26.15.3",
+    "playwright-core": "1.63.0",
+    "preact": "10.29.8"
+  },
+  "dependencies": {
+    "htm": "3.1.1"
+  }
+}

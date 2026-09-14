@@ -1,6 +1,6 @@
 # Sipper Chrome extension
 
-Adds SIP accounts from a PBX web interface to the Sipper macOS app. Open an
+Adds SIP accounts from a PBX web interface to the Sipper app on Mac or Windows. Open an
 extension in FusionPBX, click the Sipper toolbar button, check the details and
 press **Add to Sipper**. On the extensions list you can pick several and add them
 in one go. On any other page you can type an account in by hand.
@@ -59,7 +59,7 @@ How the fields map:
   session Chrome already has, only for the extensions you tick.
 * Data goes to the local Sipper app and nowhere else. Nothing is sent to any server
   and nothing is logged. Passwords are handed to Sipper, which stores them in the
-  macOS Keychain.
+  macOS Keychain or, on Windows, encrypted with the Windows Data Protection API.
 * `chrome.storage.local` keeps only the last port/transport/server you chose per
   PBX host. No passwords are stored by the extension.
 

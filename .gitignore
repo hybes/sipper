@@ -41,3 +41,10 @@ node_modules/
 /.claude/
 /.codex/
 /.agents/
+
+# Windows app (windows/): dependencies, PJSIP build, engine binaries, packaged output
+/windows/dist/
+/windows/vendor/
+/windows/engine/build/
+/windows/build/licences/
+/windows/tests/e2e/output/

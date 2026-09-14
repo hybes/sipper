@@ -1,8 +1,8 @@
 # Sipper
 
-A native macOS SIP softphone built with SwiftUI on top of [PJSIP](https://www.pjsip.org),
-plus a Chrome extension that adds SIP accounts to it straight from a FusionPBX
-web UI.
+A SIP softphone built on [PJSIP](https://www.pjsip.org): a native macOS app in
+SwiftUI, a Windows app ([windows/](windows/README.md)), and a Chrome extension that
+adds SIP accounts to either straight from a FusionPBX web UI.
 
 ## What it does
 
@@ -32,6 +32,15 @@ web UI.
   passwords carried by iCloud Keychain.
 - Passwords live in the macOS Keychain; everything else is JSON in
   `~/Library/Application Support/Sipper/`.
+
+## Sipper for Windows
+
+The Windows app in `windows/` has the same accounts, profiles, calls, history,
+contacts, recording and browser import, without iCloud sync. It is an Electron
+app whose calls run in `sipper-engine`, a C port of the Mac engine around PJSIP.
+It runs and is tested on a Mac as well; the installer is built on GitHub Actions
+(`.github/workflows/windows.yml`). See [windows/README.md](windows/README.md) for
+how it differs from the Mac app, development and releasing.
 
 ## Requirements
 
@@ -224,6 +233,8 @@ scripts/build-pjsip.sh  PJSIP build (static library into vendor/pjsip)
 tools/                  test SIP server, icon generator, packaging helpers
 docs/PROTOCOL.md        the hand-off contract between extension and app
 website/                sipper.dev: static site and its Cloudflare Worker
+windows/                Sipper for Windows: Electron app, PJSIP engine, installer (windows/README.md)
+.github/workflows/      Windows build, tests and installer
 ```
 
 ## Licences

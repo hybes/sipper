@@ -1,0 +1,113 @@
+# Builds and tests Sipper for Windows: PJSIP and Opus with MSVC (cached), the engine and browser
+# helper, unit tests, a two-engine call test, the NSIS installer, and an end-to-end test of the
+# packaged app against tools/sip-test-server.py. The installer is uploaded as an artifact.
+name: Windows app
+
+on:
+  push:
+    branches: [main, 'windows-**']
+    paths:
+      - 'windows/**'
+      - 'tools/sip-test-server.py'
+      - 'docs/PROTOCOL.md'
+      - 'LICENSE'
+      - '.github/workflows/windows.yml'
+  pull_request:
+    paths:
+      - 'windows/**'
+      - 'tools/sip-test-server.py'
+      - 'docs/PROTOCOL.md'
+      - '.github/workflows/windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and test (x64)
+    # Pinned: newer images may drop the v143 toolset the PJSIP projects are built with.
+    runs-on: windows-2022
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: windows/package-lock.json
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Restore PJSIP and Opus
+        id: pjsip
+        uses: actions/cache/restore@v6
+        with:
+          path: windows/vendor/pjsip-win
+          key: pjsip-win-x64-${{ hashFiles('windows/scripts/build-pjsip.ps1') }}
+
+      - name: Build PJSIP and Opus
+        if: steps.pjsip.outputs.cache-hit != 'true'
+        run: windows/scripts/build-pjsip.ps1
+
+      # Saved straight away, so a failure in a later step does not throw the build away.
+      - name: Save PJSIP and Opus
+        if: steps.pjsip.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: windows/vendor/pjsip-win
+          key: pjsip-win-x64-${{ hashFiles('windows/scripts/build-pjsip.ps1') }}
+
+      - name: Build the engine and browser helper
+        run: windows/engine/build-windows.ps1
+
+      - name: Install dependencies
+        working-directory: windows
+        run: |
+          npm ci --no-audit --no-fund
+          node node_modules/electron/install.js
+
+      - name: Unit tests
+        working-directory: windows
+        run: npm test
+
+      - name: Engine and browser helper tests
+        working-directory: windows
+        run: npm run test:engine
+
+      - name: Package the installer
+        working-directory: windows
+        run: npm run dist
+
+      - name: End-to-end test of the packaged app
+        working-directory: windows
+        env:
+          SIPPER_APP: ${{ github.workspace }}\windows\dist\win-unpacked\Sipper.exe
+        run: npm run test:e2e
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: Sipper-windows-x64
+          path: |
+            windows/dist/Sipper-*-Setup.exe
+            windows/dist/Sipper-*-Setup.exe.blockmap
+          if-no-files-found: error
+
+      - name: Upload test screenshots and logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-output
+          path: windows/tests/e2e/output
+          if-no-files-found: ignore
