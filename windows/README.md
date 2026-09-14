@@ -103,7 +103,8 @@ The installer is per-user (no administrator rights) and not code-signed yet, so 
 warns about an unknown publisher on first run. Signing needs a certificate (for example Azure
 Trusted Signing, or SignPath's free programme for open-source projects).
 
-Release checklist: bump `version` in `package.json`, let the workflow build the installer, attach
-`Sipper-<version>-Setup.exe` to the GitHub release next to the DMG, and set `WINDOWS_DOWNLOAD_URL`
-for the website. Licence texts are collected by `scripts/copy-licences.mjs` into
-`resources\Licenses`; publish the source archive with each release as for the Mac app.
+Release checklist: bump `version` in `package.json`, let the workflow build the installer on
+main, and publish `Sipper-<version>-Setup.exe` with its SHA-256 and a source archive (the
+repository at the tag plus the pjproject and Opus sources) as a GitHub release tagged
+`windows-v<version>`. Then set `WINDOWS_DOWNLOAD_URL` in `website/wrangler.jsonc` and deploy the
+site. Licence texts are collected by `scripts/copy-licences.mjs` into `resources\Licenses`.

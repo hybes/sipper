@@ -350,19 +350,24 @@ kbd {
 }
 
 .shortcuts {
+	width: 100%;
 	margin: 1.75rem 0 0;
-	border-top: 1px solid var(--line);
+	border-collapse: collapse;
 }
-.shortcuts div {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 1rem;
+.shortcuts th,
+.shortcuts td {
 	padding-block: 0.6rem;
 	border-bottom: 1px solid var(--line);
+	font-weight: inherit;
+	text-align: left;
 }
-.shortcuts dt { color: var(--ink-2); }
-.shortcuts dd { margin: 0; white-space: nowrap; }
+.shortcuts thead th {
+	padding-top: 0;
+	color: var(--ink-3, var(--ink-2));
+	font-size: 0.85em;
+}
+.shortcuts tbody th { color: var(--ink-2); padding-right: 1rem; }
+.shortcuts td { white-space: nowrap; padding-left: 1rem; }
 
 .table-scroll { margin-top: clamp(2.5rem, 5vw, 4rem); overflow-x: auto; }
 

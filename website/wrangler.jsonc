@@ -24,8 +24,8 @@
 		// The notarised DMG, for example
 		// https://github.com/hybes/sipper/releases/download/v0.1.0/Sipper-0.1.0.dmg
 		"MAC_DOWNLOAD_URL": "https://github.com/hybes/sipper/releases/download/v0.1.0/Sipper-0.1.0.dmg",
-		// The per-user Windows installer, for example
-		// https://github.com/hybes/sipper/releases/download/v0.1.0/Sipper-0.1.0-Setup.exe
-		"WINDOWS_DOWNLOAD_URL": ""
+		// The per-user Windows installer from the Windows workflow, for example
+		// https://github.com/hybes/sipper/releases/download/windows-v0.1.0/Sipper-0.1.0-Setup.exe
+		"WINDOWS_DOWNLOAD_URL": "https://github.com/hybes/sipper/releases/download/windows-v0.1.0/Sipper-0.1.0-Setup.exe"
 	}
 }
