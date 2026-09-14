@@ -20,6 +20,6 @@
 		// https://github.com/hybes/sipper/releases/download/v0.1.0/Sipper-0.1.0.dmg
 		// Update it and deploy again for each release. While it is empty there is no public
 		// download: sipper.dev/download goes to "Get Sipper" and the pages say "coming soon".
-		"DOWNLOAD_URL": ""
+		"DOWNLOAD_URL": "https://github.com/hybes/sipper/releases/download/v0.1.0/Sipper-0.1.0.dmg"
 	}
 }
