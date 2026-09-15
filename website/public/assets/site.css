@@ -257,8 +257,35 @@ kbd {
 	gap: 1.25rem 2.5rem;
 	margin-top: 1.75rem;
 }
-/* The visitor's own download, with a way to the other platforms beneath it. */
-.downloads.own { flex-direction: column; gap: 1.25rem; }
+/* The visitor's own download, with a link to the other downloads beneath it. */
+.downloads.own { flex-direction: column; gap: 1rem; }
+
+/* SVG symbols for <use>; the sprite itself takes no space. */
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+.icon { width: 1em; height: 1em; flex: none; fill: currentColor; }
+.button .icon { width: 1.15em; height: 1.15em; margin-right: 0.6rem; }
+/* Optical adjustments: the Apple logo's leaf makes it look low, the solid Windows squares look big. */
+.button .icon.apple { margin-top: -0.2em; }
+.button .icon.windows { width: 0.95em; height: 0.95em; }
+
+.button.large {
+	min-height: 3.25rem;
+	padding: 0.7rem 1.4rem;
+	border-radius: 12px;
+	font-size: 1.0625rem;
+}
+
+.more {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	font-size: 1rem;
+	font-weight: 600;
+	text-decoration: none;
+}
+.more:hover { text-decoration: underline; }
+.more .icon { width: 0.95em; height: 0.95em; }
 .downloads .fine { margin: 0.55rem 0 0; }
 .downloads .status {
 	display: flex;
