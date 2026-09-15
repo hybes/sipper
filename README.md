@@ -4,6 +4,13 @@ A SIP softphone built on [PJSIP](https://www.pjsip.org): a native macOS app in
 SwiftUI, a Windows app ([windows/](windows/README.md)), and a Chrome extension that
 adds SIP accounts to either straight from a FusionPBX web UI.
 
+Download it from [sipper.dev](https://sipper.dev), or on a Mac install it with
+[Homebrew](https://brew.sh):
+
+```bash
+brew install --cask hybes/tap/sipper
+```
+
 ## What it does
 
 - **Accounts and profiles.** Any number of SIP accounts, grouped into profiles
@@ -127,6 +134,19 @@ timestamp, no debugging entitlement), notarises and staples the app, then packs
 SHA-256 next to it. Each notarisation usually takes a few minutes. Without
 `NOTARY_PROFILE` nothing is notarised, which is only useful for checking the
 packaging.
+
+Attach the DMG and its `.sha256` file to a GitHub release tagged `v<version>`,
+then update the Homebrew cask:
+
+```bash
+make cask
+```
+
+It downloads the DMG from that release, checks it against the `.sha256` file and
+commits the new version and checksum to `Casks/sipper.rb` in
+[hybes/homebrew-tap](https://github.com/hybes/homebrew-tap), so
+`brew upgrade --cask sipper` installs it. `VERSION=<version>` picks a release
+other than the version in `project.yml`.
 
 Release builds leave out iCloud sync (a Developer ID build with the iCloud
 entitlement needs a provisioning profile) and carry the licence texts of every

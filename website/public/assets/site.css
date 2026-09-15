@@ -409,6 +409,18 @@ kbd {
 }
 .code code { padding: 0; background: none; font-size: inherit; }
 
+/* A command to copy: as wide as the command, and one click selects all of it. */
+.command {
+	width: fit-content;
+	max-width: 100%;
+	font-size: clamp(0.8rem, 3.6vw, 0.95rem);
+	user-select: all;
+	-webkit-user-select: all;
+}
+
+.brew { margin-top: 2.5rem; }
+.brew .fine { margin-top: 0; }
+
 .band { background: var(--band); color: var(--band-ink); }
 .band h2 { color: var(--band-ink); }
 .band .section-intro, .band p { color: var(--band-ink-2); }

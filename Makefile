@@ -7,6 +7,7 @@
 #   make app TEAM=… ICLOUD=1   also enable the iCloud container entitlement (needs the container in your team)
 #   make release TEAM=… NOTARY_PROFILE=…
 #                              Developer ID signed, notarised DMG in dist/ for publishing (README › Releasing)
+#   make cask [VERSION=…]      point the Homebrew cask in hybes/homebrew-tap at the published release
 #   make run                   build and launch the app
 #   make test                  run the unit tests
 #   make extension             package the Chrome extension into extension/dist
@@ -43,7 +44,7 @@ endif
 
 XCODEBUILD   := xcodebuild -project $(PROJECT) -scheme $(SCHEME) -derivedDataPath $(DERIVED) $(SIGN_FLAGS)
 
-.PHONY: all pjsip project app run release test extension icon clean
+.PHONY: all pjsip project app run release cask test extension icon clean
 
 all: app
 
@@ -74,6 +75,9 @@ run: app
 
 release: pjsip $(PROJECT)
 	TEAM="$(TEAM)" NOTARY_PROFILE="$(NOTARY_PROFILE)" SIGN_IDENTITY="$(SIGN_IDENTITY)" tools/release.sh
+
+cask:
+	VERSION="$(VERSION)" tools/update-cask.sh
 
 test: pjsip $(PROJECT)
 	set -o pipefail; $(XCODEBUILD) -configuration Debug test | tools/xcpretty-lite.sh
