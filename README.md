@@ -235,7 +235,8 @@ Windows workflow to a GitHub release, set `MAC_DOWNLOAD_URL` and
 `WINDOWS_DOWNLOAD_URL` in `website/wrangler.jsonc` to their URLs and run
 `make site-deploy`. sipper.dev/download then sends each visitor to the file for
 their computer (sipper.dev/download/mac and /download/windows pick one directly),
-and the pages lead with that platform's button and offer the other beside it.
+and the home page shows only that platform's button, with Other platforms leading
+to Get Sipper (visitors on any other system see both).
 While a URL is empty, that platform's link goes to the Get Sipper section and the
 pages say it is coming soon; while both are empty the pages keep their
 pre-release wording. `npm --prefix website test` checks the platform detection.

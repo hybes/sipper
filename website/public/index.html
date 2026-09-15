@@ -62,30 +62,23 @@
 				</div>
 				<p class="fine" data-prelaunch>Free · macOS 14 Sonoma or later · Macs with Apple silicon</p>
 
-				<!-- Once there is a download, the Worker keeps only the block for the visitor's platform. -->
-				<div class="downloads" data-launched data-visitor="mac" hidden>
+				<!-- Once there is a download, the Worker keeps only the block for the visitor's platform: Mac and
+				     Windows visitors get their own download, with the rest in Get Sipper; anyone else sees both. -->
+				<div class="downloads own" data-launched data-visitor="mac" hidden>
 					<div data-launched="mac" hidden>
 						<a class="button primary" href="/download/mac">Download for Mac</a>
 						<p class="fine">macOS 14 Sonoma or later · Macs with Apple silicon</p>
 					</div>
 					<p class="status" data-prelaunch="mac">Mac version coming soon</p>
-					<div data-launched="windows" hidden>
-						<a class="button" href="/download/windows">Download for Windows</a>
-						<p class="fine">Windows 10 or 11 · 64-bit (x64) PCs</p>
-					</div>
-					<p class="status" data-prelaunch="windows">Windows version coming soon</p>
+					<a class="button" href="#get">Other platforms</a>
 				</div>
-				<div class="downloads" data-launched data-visitor="windows" hidden>
+				<div class="downloads own" data-launched data-visitor="windows" hidden>
 					<div data-launched="windows" hidden>
 						<a class="button primary" href="/download/windows">Download for Windows</a>
 						<p class="fine">Windows 10 or 11 · 64-bit (x64) PCs</p>
 					</div>
 					<p class="status" data-prelaunch="windows">Windows version coming soon</p>
-					<div data-launched="mac" hidden>
-						<a class="button" href="/download/mac">Download for Mac</a>
-						<p class="fine">macOS 14 Sonoma or later · Macs with Apple silicon</p>
-					</div>
-					<p class="status" data-prelaunch="mac">Mac version coming soon</p>
+					<a class="button" href="#get">Other platforms</a>
 				</div>
 				<div class="downloads" data-launched data-visitor="unknown" hidden>
 					<div data-launched="mac" hidden>

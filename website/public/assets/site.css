@@ -257,6 +257,8 @@ kbd {
 	gap: 1.25rem 2.5rem;
 	margin-top: 1.75rem;
 }
+/* The visitor's own download, with a way to the other platforms beneath it. */
+.downloads.own { flex-direction: column; gap: 1.25rem; }
 .downloads .fine { margin: 0.55rem 0 0; }
 .downloads .status {
 	display: flex;
