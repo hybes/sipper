@@ -9,6 +9,8 @@ struct SettingsView: View {
         TabView {
             GeneralSettingsView()
                 .tabItem { Label("General", systemImage: "gearshape") }
+            ManagedSettingsView(managed: state.managedAccounts)
+                .tabItem { Label("Managed", systemImage: "person.crop.circle.badge.checkmark") }
             AudioSettingsView()
                 .tabItem { Label("Audio", systemImage: "speaker.wave.2") }
             NetworkSettingsView()

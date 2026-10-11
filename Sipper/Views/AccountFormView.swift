@@ -25,7 +25,7 @@ struct AccountFormView: View {
                 Section {
                     TextField("Label", text: $draft.label, prompt: Text(draft.defaultLabel.isEmpty || draft.username.isEmpty ? "Optional" : draft.defaultLabel))
                     Picker("Profile", selection: $draft.profileID) {
-                        ForEach(state.profiles) { profile in
+                        ForEach(state.manualProfiles) { profile in
                             Text(profile.name).tag(profile.id)
                         }
                     }
@@ -162,7 +162,7 @@ struct AccountFormView: View {
         loaded = true
         switch mode {
         case .add(let profileID):
-            let target = profileID.flatMap { state.profile(for: $0)?.id } ?? state.profiles.first?.id ?? UUID()
+            let target = profileID.flatMap { id in state.manualProfiles.first { $0.id == id }?.id } ?? state.manualProfiles.first?.id ?? UUID()
             draft = SIPAccount(profileID: target, username: "", domain: "", transport: state.settings.defaultTransport)
         case .edit(let id):
             if let existing = state.account(for: id) {

@@ -1,0 +1,60 @@
+--- a/pjsip/src/pjsip/sip_auth_client.c
++++ b/pjsip/src/pjsip/sip_auth_client.c
+@@ -57,6 +57,57 @@
+ #  endif
+ 
+ #  define DEFINE_HASH_CONTEXT EVP_MD_CTX* mdctx
++
++#elif defined(__APPLE__) && (PJ_SSL_SOCK_IMP==PJ_SSL_SOCK_IMP_APPLE || PJ_SSL_SOCK_IMP==PJ_SSL_SOCK_IMP_DARWIN)
++/* Sipper: retain Apple's TLS trust handling and use its SHA-256 implementation.
++ * The digest protocol remains PJSIP's; SHA-512/256 is deliberately unsupported.
++ */
++#include <CommonCrypto/CommonDigest.h>
++#include <limits.h>
++#define MD5_DIGEST_LENGTH (PJSIP_MD5STRLEN / 2)
++#define SHA256_DIGEST_LENGTH (PJSIP_SHA256STRLEN / 2)
++typedef struct sipper_digest_context {
++    pj_bool_t sha256;
++    union { pj_md5_context md5; CC_SHA256_CTX sha; } state;
++} sipper_digest_context;
++static const char *sipper_digest_name(const char *name)
++{
++    return pj_ansi_strcmp(name, "MD5") == 0 ||
++           pj_ansi_strcmp(name, "SHA256") == 0 ? name : NULL;
++}
++static void sipper_digest_init(sipper_digest_context *ctx, const char *name)
++{
++    ctx->sha256 = pj_ansi_strcmp(name, "SHA256") == 0;
++    if (ctx->sha256) CC_SHA256_Init(&ctx->state.sha);
++    else pj_md5_init(&ctx->state.md5);
++}
++static void sipper_digest_update(sipper_digest_context *ctx, const void *data,
++                                 size_t length)
++{
++    const unsigned char *bytes = data;
++    while (length) {
++        unsigned count = (unsigned)(length > UINT_MAX ? UINT_MAX : length);
++        if (ctx->sha256) CC_SHA256_Update(&ctx->state.sha, bytes, count);
++        else pj_md5_update(&ctx->state.md5, bytes, count);
++        bytes += count;
++        length -= count;
++    }
++}
++static void sipper_digest_final(sipper_digest_context *ctx, unsigned char *out,
++                                unsigned *length)
++{
++    if (ctx->sha256) CC_SHA256_Final(out, &ctx->state.sha);
++    else pj_md5_final(&ctx->state.md5, out);
++    if (length) *length = ctx->sha256 ? SHA256_DIGEST_LENGTH : MD5_DIGEST_LENGTH;
++}
++#define EVP_MD char
++#define DEFINE_HASH_CONTEXT sipper_digest_context pmc; sipper_digest_context *mdctx
++#define EVP_get_digestbyname(name) sipper_digest_name(name)
++#define EVP_MD_CTX_new() &pmc
++#define EVP_DigestInit_ex(ctx, md, unused) sipper_digest_init(ctx, md)
++#define EVP_DigestUpdate(ctx, data, length) sipper_digest_update(ctx, data, length)
++#define EVP_DigestFinal_ex(ctx, digest, length) sipper_digest_final(ctx, digest, length)
++#define EVP_MD_CTX_free(ctx) pj_bzero(ctx, sizeof(*(ctx)))
+ 
+ #else
+ #define HAVE_NO_OPENSSL 1

@@ -19,14 +19,20 @@ export function registerAppScheme() {
   ]);
 }
 
-export function handleAppScheme(appRoot) {
-  protocol.handle(APP_SCHEME, (request) => {
+export function handleAppScheme(appRoot, registry = protocol, meetingPolicy = () => "default-src 'none'") {
+  registry.handle(APP_SCHEME, async (request) => {
     const url = new URL(request.url);
     const relative = path.posix.normalize(decodeURIComponent(url.pathname)).replace(/^\/+/, '');
-    if (url.host !== APP_HOST || relative.includes('..') || !SERVED.some((prefix) => relative.startsWith(prefix))) {
+    if (url.host !== APP_HOST || relative.includes('..') || !(SERVED.some((prefix) => relative.startsWith(prefix)) || relative === 'node_modules/livekit-client/dist/livekit-client.umd.js')) {
       return new Response('Not found', { status: 404 });
     }
-    return net.fetch(pathToFileURL(path.join(appRoot, relative)).href);
+    const response = await net.fetch(pathToFileURL(path.join(appRoot, relative)).href);
+    if (relative !== 'src/renderer/meeting.html') return response;
+    const headers = new Headers(response.headers);
+    headers.set('Content-Security-Policy', meetingPolicy(url.searchParams.get('room')));
+    headers.set('Cache-Control', 'no-store');
+    headers.set('Permissions-Policy', 'geolocation=(), payment=(), usb=()');
+    return new Response(response.body, { status: response.status, headers });
   });
 }
 

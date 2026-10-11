@@ -8,9 +8,9 @@ import path from 'node:path';
 const STATE_ACTIONS = new Set([
   'addProfile', 'updateProfile', 'setProfileEnabled', 'deleteProfile', 'reorderProfiles',
   'addAccount', 'updateAccount', 'setAccountEnabled', 'deleteAccount', 'reorderAccounts', 'moveAccount',
-  'setDialerAccount', 'reRegister', 'reRegisterAll', 'passwordFor',
+  'setDialerAccount', 'prepareNewCall', 'reRegister', 'reRegisterAll', 'passwordFor',
   'call', 'callVoicemail', 'callBack', 'answer', 'decline', 'hangup', 'hangupActiveCall', 'answerOrHangUp',
-  'toggleMute', 'toggleHold', 'swapToCall', 'selectCall', 'sendDTMF', 'transfer', 'attendedTransfer', 'toggleRecording',
+  'mergeConference', 'separateConference', 'endConference', 'toggleMute', 'toggleHold', 'swapToCall', 'selectCall', 'sendDTMF', 'transfer', 'attendedTransfer', 'toggleRecording',
   'markMissedCallsSeen', 'deleteHistory', 'clearHistory', 'deleteRecording',
   'addContact', 'updateContact', 'deleteContact', 'toggleFavorite',
   'commitImport', 'cancelImport', 'updateSettings', 'toggleDoNotDisturb',
@@ -41,21 +41,78 @@ function popupMenu(win, items) {
   });
 }
 
-export function registerIPC({ state, rendererBase, windows, notifications, browserHelper, about, actions }) {
+export function registerIPC({ state, managed, meetings, rendererBase, windows, notifications, browserHelper, about, actions }) {
   const fromSipper = (event) => event.senderFrame?.url?.startsWith(rendererBase);
   const guard = (handler) => (event, ...args) => {
     if (!fromSipper(event)) throw new Error('Refused a request from an unknown page.');
     return handler(event, ...args);
   };
 
-  ipcMain.handle('state:get', guard(() => state.snapshot()));
+  const meetingSender = event => meetings?.owns(BrowserWindow.fromWebContents(event.sender));
+  ipcMain.handle('state:get', guard(event => {
+    if (meetingSender(event)) throw new Error('The meeting page cannot read app state.');
+    return state.snapshot();
+  }));
 
-  ipcMain.handle('state:invoke', guard((_event, method, args) => {
+  ipcMain.handle('state:invoke', guard((event, method, args) => {
+    if (meetingSender(event)) throw new Error('The meeting page cannot control phone accounts.');
     if (!STATE_ACTIONS.has(method)) throw new Error(`Unknown action ${method}`);
     return state[method](...(Array.isArray(args) ? args : []));
   }));
 
+  // Message operations preserve safe error codes across Electron's error serialisation.
+  const messageResult = async operation => {
+    try { return { value: await operation() }; }
+    catch (error) {
+      return { error: error.name === 'ZodError' ? { code: 'invalid_message_input', message: 'Check the message, people and history cursor.' }
+        : { code: error.code ?? 'unavailable', message: error.code ? error.message : 'Messages are temporarily unavailable.' } };
+    }
+  };
+  const meetingResult = async operation => {
+    try { return { value: await operation() }; }
+    catch (error) { return { error: { code: error.name === 'ZodError' ? 'invalid_meeting_input' : error.code ?? 'unavailable',
+      message: error.name === 'ZodError' ? 'Refresh the meeting and try again.' : error.code ? error.message : 'Meetings are temporarily unavailable.' } }; }
+  };
+  const mediaServices = {
+    meetingInitial: win => meetingResult(() => meetings.initial(win)),
+    meetingDetails: win => meetingResult(() => meetings.details(win)),
+    meetingRetry: win => meetingResult(() => meetings.retry(win)),
+    meetingMediaState: (win, connected) => meetingResult(() => meetings.mediaState(win, connected)),
+    meetingRetire: win => meetingResult(() => meetings.retire(win)),
+    meetingClose: win => meetingResult(() => meetings.close(win)),
+    meetingEnd: win => meetingResult(() => meetings.end(win)),
+    meetingRemove: (win, userId) => meetingResult(() => meetings.remove(win, userId)),
+    meetingChooseScreen: (win, id, source, audio) => meetingResult(() => meetings.chooseScreen(win, id, source, audio)),
+  };
+
   const services = {
+    managedSignIn: () => managed.client.signIn(),
+    managedCancelSignIn: () => managed.client.cancelSignIn(),
+    managedRefresh: () => managed.refresh(),
+    managedAvailability: (_win, organisationId, value) => managed.setAvailability(organisationId, value),
+    managedDoNotDisturb: (_win, organisationId, enabled) => managed.setDoNotDisturb(organisationId, enabled),
+    managedConnect: (_win, organisationId) => managed.connect(organisationId),
+    managedConnectSetupLink: (_win, value) => managed.connectSetupLink(value),
+    managedDisconnect: (_win, deviceId) => managed.client.disconnect(deviceId),
+    managedSignOut: () => managed.client.signOut(),
+    managedDirectory: (_win, deviceId) => managed.client.directorySnapshot(deviceId),
+    managedDirectoryRefresh: (_win, deviceId) => managed.client.refreshDirectory(deviceId),
+    managedDirectoryStatus: (_win, deviceId, contactIds) => managed.client.directoryStatus(deviceId, contactIds),
+    managedDirectoryCall: (_win, deviceId, contactId, number, accountId) => managed.callDirectory(deviceId, contactId, number, accountId),
+    managedMessagePeople: (_win, deviceId, query) => messageResult(() => managed.client.messagePeople(deviceId, query)),
+    managedConversations: (_win, deviceId, query) => messageResult(() => managed.client.conversations(deviceId, query)),
+    managedCreateConversation: (_win, deviceId, input) => messageResult(() => managed.client.createConversation(deviceId, input)),
+    managedConversationMessages: (_win, deviceId, id, query) => messageResult(() => managed.client.conversationMessages(deviceId, id, query)),
+    managedSendMessage: (_win, deviceId, id, input) => messageResult(() => managed.client.sendMessage(deviceId, id, input)),
+    managedMarkConversationRead: (_win, deviceId, id, sequence) => messageResult(() => managed.client.markConversationRead(deviceId, id, sequence)),
+    managedUpdateMessageGroup: (_win, deviceId, id, input) => messageResult(() => managed.client.updateMessageGroup(deviceId, id, input)),
+    managedLeaveMessageGroup: (_win, deviceId, id) => messageResult(() => managed.client.leaveMessageGroup(deviceId, id)),
+    managedCurrentMeeting: (_win, deviceId, id) => meetingResult(() => managed.client.currentMeeting(deviceId, id)),
+    managedStartMeeting: (_win, deviceId, id, nonce) => meetingResult(() => managed.client.startMeeting(deviceId, id, nonce)),
+    managedOpenMeeting: (win, deviceId, id) => meetingResult(() => {
+      if (win !== windows().mainWindow) throw new Error('Only the main window can open a meeting.');
+      return meetings.open(deviceId, id);
+    }),
     confirm: (win, options) => dialog.showMessageBox(win, {
       type: options.type ?? 'question',
       title: 'Sipper',
@@ -128,6 +185,12 @@ export function registerIPC({ state, rendererBase, windows, notifications, brows
   };
 
   ipcMain.handle('app:action', guard((event, action, args) => {
+    if (meetingSender(event)) {
+      const service = mediaServices[action];
+      if (!service) throw new Error('The meeting page can only control its own meeting.');
+      return service(BrowserWindow.fromWebContents(event.sender), ...(Array.isArray(args) ? args : []));
+    }
+    if (mediaServices[action]) throw new Error('This operation belongs to a meeting window.');
     const service = services[action];
     if (!service) throw new Error(`Unknown service ${action}`);
     return service(BrowserWindow.fromWebContents(event.sender), ...(Array.isArray(args) ? args : []));

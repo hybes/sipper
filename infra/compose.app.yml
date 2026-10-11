@@ -1,0 +1,82 @@
+name: sipper-platform
+
+x-app: &app
+  image: ${SIPPER_APP_IMAGE:-sipper-platform:local}
+  build:
+    context: ../portal
+  env_file:
+    - path: ${SIPPER_APP_ENV_FILE:?Set an absolute path to the private portal environment file}
+      format: raw
+  environment:
+    NODE_ENV: production
+    HOST: 0.0.0.0
+    PORT: 3100
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  stop_grace_period: 60s
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  meeting:
+    <<: *app
+    profiles: [meetings]
+    command: [meeting]
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: [CMD, node, --import, tsx, scripts/worker-health.ts, meeting]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 2
+  migrate:
+    <<: *app
+    command: [migrate]
+    restart: "no"
+  portal:
+    <<: *app
+    command: [portal]
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    # Origin only. A separately configured HTTPS proxy terminates public traffic.
+    ports: ["127.0.0.1:${SIPPER_ORIGIN_PORT:-3101}:3100"]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3100/api/health', {signal: AbortSignal.timeout(4000)}).then(r => {if (!r.ok) process.exit(1)}).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+  email:
+    <<: *app
+    command: [email]
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: [CMD, node, --import, tsx, scripts/worker-health.ts, email]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 2
+  push:
+    <<: *app
+    command: [push]
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: [CMD, node, --import, tsx, scripts/worker-health.ts, push]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 2

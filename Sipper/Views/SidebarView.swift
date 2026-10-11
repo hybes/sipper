@@ -28,12 +28,14 @@ struct SidebarView: View {
                 .tag(SidebarItem.history)
                 Label("Contacts", systemImage: "person.crop.circle")
                     .tag(SidebarItem.contacts)
+                Label("Messages", systemImage: "bubble.left.and.bubble.right")
+                    .tag(SidebarItem.messages)
             }
 
             ForEach(state.profiles) { profile in
                 Section(isExpanded: expandedBinding(for: profile.id)) {
                     let members = state.accounts(in: profile.id)
-                    if members.isEmpty {
+                    if members.isEmpty && profile.managedOrganisationID == nil {
                         Button {
                             sheet = .addAccount(profileID: profile.id)
                         } label: {
@@ -68,7 +70,7 @@ struct SidebarView: View {
         .confirmationDialog("Delete profile \(profileToDelete?.name ?? "")?",
                             isPresented: Binding(get: { profileToDelete != nil }, set: { if !$0 { profileToDelete = nil } }),
                             presenting: profileToDelete) { profile in
-            let others = state.profiles.filter { $0.id != profile.id }
+            let others = state.manualProfiles.filter { $0.id != profile.id }
             ForEach(others) { other in
                 Button("Move accounts to \(other.name)") { state.deleteProfile(profile.id, moveAccountsTo: other.id) }
             }
@@ -87,25 +89,25 @@ struct SidebarView: View {
     @ViewBuilder
     private func accountMenu(_ account: SIPAccount) -> some View {
         Button("Call from this account") {
-            state.dialerAccountID = account.id
-            state.selection = .dialer
-            NotificationCenter.default.post(name: .sipperFocusDialer, object: nil)
+            state.prepareNewCall(from: account.id)
         }
         Button("Call voicemail") { state.callVoicemail(for: account.id) }
         Divider()
         Button("Re-register") { state.reRegister(account.id) }
-            .disabled(!account.isEnabled)
+            .disabled(!state.canUseAccount(account))
         Button(account.isEnabled ? "Disable" : "Enable") { state.setAccountEnabled(account.id, enabled: !account.isEnabled) }
+        if account.managed == nil {
         Button("Edit…") { sheet = .editAccount(account.id) }
-        if state.profiles.count > 1 {
+        if state.manualProfiles.count > 1 {
             Menu("Move to") {
-                ForEach(state.profiles.filter { $0.id != account.profileID }) { profile in
+                ForEach(state.manualProfiles.filter { $0.id != account.profileID }) { profile in
                     Button(profile.name) { state.moveAccount(account.id, to: profile.id) }
                 }
             }
         }
         Divider()
         Button("Delete…", role: .destructive) { accountToDelete = account }
+        } else { SettingsLink { Text("Managed account settings…") } }
     }
 
     private var bottomBar: some View {
@@ -206,12 +208,14 @@ struct ProfileHeader: View {
             .help("Show profile")
             Spacer()
             Menu {
+                if profile.managedOrganisationID == nil {
                 Button("Add Account…") { sheet = .addAccount(profileID: profile.id) }
                 Button("Edit Profile…") { sheet = .editProfile(profile.id) }
+                } else { SettingsLink { Text("Managed account settings…") } }
                 Button(profile.isEnabled ? "Disable Profile" : "Enable Profile") {
                     state.setProfileEnabled(profile.id, enabled: !profile.isEnabled)
                 }
-                if state.profiles.count > 1 {
+                if state.manualProfiles.count > 1 && profile.managedOrganisationID == nil {
                     Divider()
                     Button("Delete Profile…", role: .destructive) { profileToDelete = profile }
                 }

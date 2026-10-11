@@ -16,6 +16,11 @@
 		"run_worker_first": true
 	},
 	"vars": {
+		// HTTPS origin for the management container (e.g. a protected Cloudflare Tunnel).
+		// Blank keeps management unavailable and leaves the public website/downloads working.
+		// Configure SIPPER_EDGE_SHARED_SECRET separately with `wrangler secret put`, matching
+		// the portal's private environment. Never put the secret in this file.
+		"PORTAL_ORIGIN": "",
 		// The files attached to the latest GitHub release. Update them and deploy again for each
 		// release. While one is empty that platform has no public download: its download link goes
 		// to "Get Sipper" and the pages say it's coming soon. While both are empty the pages keep

@@ -21,13 +21,14 @@ import sys
 import threading
 import time
 from email.utils import formatdate
+from urllib.parse import unquote
 
 SERVER_NAME = "sipper-test-server/1.0"
 ALLOW_METHODS = ("INVITE", "ACK", "BYE", "CANCEL", "OPTIONS", "INFO", "REFER",
                  "NOTIFY", "MESSAGE", "UPDATE", "PRACK", "SUBSCRIBE", "REGISTER")
 PROXIED_METHODS = ("INVITE", "ACK", "BYE", "CANCEL", "OPTIONS", "INFO", "REFER",
                    "NOTIFY", "MESSAGE", "UPDATE", "PRACK", "SUBSCRIBE")
-SPECIAL_NUMBERS = ("*97", "*echo")
+SPECIAL_NUMBERS = ("*97", "*echo", "*nohold", "*slowhold", "*latehold", "*silenthold")
 NONCE_LIFETIME = 600
 DEFAULT_EXPIRES = 3600
 CERT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".sip-test-certs")
@@ -40,7 +41,7 @@ COMPACT = {"v": "Via", "f": "From", "t": "To", "i": "Call-ID", "m": "Contact",
 REASONS = {100: "Trying", 180: "Ringing", 200: "OK", 202: "Accepted", 400: "Bad Request",
            401: "Unauthorized", 403: "Forbidden", 404: "Not Found", 407: "Proxy Authentication Required",
            480: "Temporarily Unavailable", 481: "Call/Transaction Does Not Exist",
-           483: "Too Many Hops", 486: "Busy Here", 487: "Request Terminated",
+           483: "Too Many Hops", 486: "Busy Here", 487: "Request Terminated", 488: "Not Acceptable Here",
            500: "Server Internal Error", 501: "Not Implemented", 503: "Service Unavailable"}
 
 VERBOSE = False
@@ -610,7 +611,9 @@ class Server:
         self.users = args.users            # user -> password
         self.mwi = args.mwi                # user -> (new, old)
         self.auth_invite = args.auth_invite
+        self.auth_algorithm = args.auth_algorithm
         self.answer_special = args.answer_special
+        self.special_call_seconds = args.special_call_seconds
         self.bindings = {}                 # user -> [Binding]
         self.nonces = {}                   # nonce -> created
         self.local_calls = {}              # Call-ID -> dict (special-number calls handled here)
@@ -716,7 +719,7 @@ class Server:
     def challenge(self, req, transport, peer, conn, proxy, stale=False):
         status = 407 if proxy else 401
         header = "Proxy-Authenticate" if proxy else "WWW-Authenticate"
-        value = 'Digest realm="%s", nonce="%s", algorithm=MD5, qop="auth"' % (self.domain, self.new_nonce())
+        value = 'Digest realm="%s", nonce="%s", algorithm=%s, qop="auth"' % (self.domain, self.new_nonce(), self.auth_algorithm)
         if stale:
             value += ", stale=true"
         self.reply(req, status, transport, peer, conn, [(header, value)])
@@ -743,14 +746,22 @@ class Server:
         if created is None or time.time() - created > NONCE_LIFETIME:
             self.challenge(req, transport, peer, conn, proxy, stale=True)
             return None
-        ha1 = md5("%s:%s:%s" % (user, self.domain, self.users[user]))
-        ha2 = md5("%s:%s" % (req.method, creds.get("uri", "")))
         qop = creds.get("qop")
+        if (creds.get("algorithm", "MD5").upper() != self.auth_algorithm
+                or creds.get("uri") != req.uri or qop not in (None, "auth")
+                or qop and (not re.fullmatch(r"[0-9a-fA-F]{8}", creds.get("nc", "")) or not creds.get("cnonce"))):
+            self.reply(req, 403, transport, peer, conn)
+            return None
+        def digest(text):
+            algorithm = hashlib.sha256 if self.auth_algorithm == "SHA-256" else hashlib.md5
+            return algorithm(text.encode("utf-8")).hexdigest()
+        ha1 = digest("%s:%s:%s" % (user, self.domain, self.users[user]))
+        ha2 = digest("%s:%s" % (req.method, req.uri))
         if qop:
-            expected = md5("%s:%s:%s:%s:%s:%s" % (ha1, nonce, creds.get("nc", ""), creds.get("cnonce", ""), qop, ha2))
+            expected = digest("%s:%s:%s:%s:%s:%s" % (ha1, nonce, creds.get("nc", ""), creds.get("cnonce", ""), qop, ha2))
         else:
-            expected = md5("%s:%s:%s" % (ha1, nonce, ha2))
-        if expected != creds.get("response", "").lower():
+            expected = digest("%s:%s:%s" % (ha1, nonce, ha2))
+        if not secrets.compare_digest(expected, creds.get("response", "").lower()):
             log("%s from %s:%d: wrong password for %s -> %d" % (req.method, peer[0], peer[1], user, 407 if proxy else 401))
             self.challenge(req, transport, peer, conn, proxy)
             return None
@@ -1035,7 +1046,7 @@ class Server:
         else:
             self.send_to(notify, transport, target.host, target.port or 5060, conn)
 
-    # -- special numbers (*97, *echo) answered by the server itself
+    # -- special numbers answered by the server itself
     def handle_special_invite(self, req, uri, transport, peer, conn):
         now = time.time()
         with self.lock:
@@ -1057,7 +1068,7 @@ class Server:
                 "sdp": self.make_sdp()}
         with self.lock:
             self.local_calls[req.call_id] = call
-        log("INVITE %s -> %s: answering locally (180, 200, BYE after 3s)" % (frm, number))
+        log("INVITE %s -> %s: answering locally (180, 200, BYE after %gs)" % (frm, number, self.special_call_seconds))
         self.reply(req, 100, transport, peer, conn)
         self.reply(req, 180, transport, peer, conn, to_tag=call["to_tag"])
         t = threading.Timer(0.7, self.special_answer, args=(req.call_id,))
@@ -1082,7 +1093,7 @@ class Server:
                    [("Contact", "<%s>" % self.my_uri(call["transport"], user=call["number"])),
                     ("Allow", ", ".join(ALLOW_METHODS))],
                    call["sdp"], "application/sdp", to_tag=call["to_tag"])
-        t = threading.Timer(3.0, self.special_hangup, args=(call_id,))
+        t = threading.Timer(self.special_call_seconds, self.special_hangup, args=(call_id,))
         call["timers"].append(t)
         t.start()
 
@@ -1104,6 +1115,32 @@ class Server:
         with self.lock:
             call = self.local_calls.get(req.call_id)
         method = req.method
+        if method == "REFER" and call.get("state") == "confirmed":
+            # Signalling fixture only: no destination call or media bridge is created.
+            destination = NameAddr.parse(req.get("Refer-To") or "sip:invalid@sipper.test").uri
+            replacement = unquote(req.get("Refer-To") or "").split("?Replaces=", 1)
+            with self.lock:
+                replaces_call = len(replacement) == 2 and any(
+                    replacement[1].startswith(cid + ";") and cid != req.call_id and other.get("state") == "confirmed"
+                    for cid, other in self.local_calls.items())
+            code = 200 if destination.user in SPECIAL_NUMBERS and (len(replacement) == 1 or replaces_call) else 404
+            self.reply(req, 202, transport, peer, conn, to_tag=call["to_tag"])
+            def notify():
+                with self.lock:
+                    if self.local_calls.get(req.call_id) is not call:
+                        return
+                    call["notify_cseq"] = call.get("notify_cseq", 0) + 1
+                # Exercise success arriving before subscription termination too.
+                subscription = "active;expires=60" if code == 200 and len(replacement) == 1 else "terminated;reason=noresource"
+                message = self.build_request("NOTIFY", call["contact"], req.get("To"), req.get("From"), req.call_id,
+                    call["notify_cseq"], transport,
+                    [("Event", "refer;id=" + req.get("CSeq").split()[0]), ("Subscription-State", subscription)],
+                    ("SIP/2.0 %d %s\r\n" % (code, REASONS[code])).encode(), "message/sipfrag")
+                self.send_to(message, transport, peer[0], peer[1], conn)
+            timer = threading.Timer(0.3, notify)
+            call["timers"].append(timer)
+            timer.start()
+            return
         if method == "ACK":
             if call.get("state") == "answered":
                 call["state"] = "confirmed"
@@ -1132,6 +1169,29 @@ class Server:
             if state == "ringing":
                 self.reply(req, 180, transport, peer, conn, to_tag=call["to_tag"])
             elif state in ("answered", "confirmed"):
+                if call["number"] == "*nohold":
+                    log("*nohold: re-INVITE -> 488 (fixture rejection)")
+                    self.reply(req, 488, transport, peer, conn, to_tag=call["to_tag"])
+                    return
+                if call["number"] == "*silenthold":
+                    log("*silenthold: ignoring re-INVITE (fixture timeout)")
+                    return
+                if call["number"] in ("*slowhold", "*latehold"):
+                    if call.get("delayed_cseq") == req.get("CSeq"):
+                        return
+                    call["delayed_cseq"] = req.get("CSeq")
+                    def delayed_answer():
+                        with self.lock:
+                            if self.local_calls.get(req.call_id) is not call or call["state"] not in ("answered", "confirmed"):
+                                return
+                        self.reply(req, 200, transport, peer, conn,
+                                   [("Contact", "<%s>" % self.my_uri(transport, user=call["number"]))],
+                                   call["sdp"], "application/sdp", to_tag=call["to_tag"])
+                    timer = threading.Timer(1 if call["number"] == "*slowhold" else 5, delayed_answer)
+                    call["timers"].append(timer)
+                    timer.start()
+                    return
+                log("%s: re-INVITE -> 200 (existing call)" % call["number"])
                 self.reply(req, 200, transport, peer, conn,
                            [("Contact", "<%s>" % self.my_uri(transport, user=call["number"]))],
                            call["sdp"], "application/sdp", to_tag=call["to_tag"])
@@ -1185,12 +1245,18 @@ def main(argv=None):
     ap.add_argument("--user", action="append", metavar="USER:PASSWORD", help="add a user (repeatable)")
     ap.add_argument("--users-file", metavar="users.json", help='{"1001": "secret"} or [{"user":..,"password":..}]')
     ap.add_argument("--auth-invite", action="store_true", help="challenge non-REGISTER requests with 407")
+    ap.add_argument("--auth-algorithm", choices=("MD5", "SHA-256"), default="MD5",
+                    help="digest algorithm offered for authentication (default MD5)")
     ap.add_argument("--answer-special", action="store_true",
-                    help="answer *97/*echo with 180, 200 OK (PCMU SDP) and BYE after 3s instead of 486")
+                    help="answer special numbers with 180, 200 OK (PCMU SDP) and a timed BYE instead of 486")
+    ap.add_argument("--special-call-seconds", type=float, default=3.0,
+                    help="seconds before ending an answered special call (0 < seconds <= 300; default 3)")
     ap.add_argument("--mwi", action="append", metavar="USER:NEW/OLD",
                     help="send message-summary NOTIFY after REGISTER/SUBSCRIBE (repeatable)")
     ap.add_argument("-v", "--verbose", action="store_true", help="print every SIP message")
     args = ap.parse_args(argv)
+    if not 0 < args.special_call_seconds <= 300:
+        ap.error("--special-call-seconds must be greater than 0 and at most 300")
 
     VERBOSE = args.verbose
     args.users = parse_users(args)

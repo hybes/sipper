@@ -1,0 +1,10 @@
+**
+!Dockerfile
+!entrypoint.py
+!media_config.py
+!config/*.conf
+!patches/*.patch
+**/.env*
+**/*.key
+**/*.pem
+**/*.p8

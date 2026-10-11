@@ -17,7 +17,7 @@ export function themeColors() {
   };
 }
 
-function secureWebPreferences(preload) {
+export function secureWebPreferences(preload) {
   return {
     preload,
     contextIsolation: true,

@@ -582,6 +582,8 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 /* Dialer */
 
 .dialer { display: flex; flex-direction: column; gap: 16px; width: min(360px, 100%); margin: 4px auto 0; }
+.new-call-return { display: flex; flex-direction: column; gap: 8px; }
+.new-call-return .button { white-space: normal; overflow-wrap: anywhere; }
 .dialer-from { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; }
 .dialer-number {
   position: relative;
@@ -662,6 +664,11 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 .other-calls { display: flex; flex-direction: column; gap: 6px; }
 .other-call { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; }
 .other-call-text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.conference-participants { border-block: 1px solid var(--control-stroke); }
+.conference-participant { display: flex; flex-direction: column; gap: 10px; padding-block: 12px; }
+.conference-participant + .conference-participant { border-top: 1px solid var(--control-stroke); }
+.conference-participant .other-call-text strong { overflow-wrap: anywhere; }
+.conference-participant-actions, .conference-merge-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 
 .call-banner {
   display: flex;
@@ -718,6 +725,61 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 .split { display: grid; flex: 1; grid-template-columns: 290px minmax(0, 1fr); min-height: 0; border-top: 1px solid var(--layer-stroke); }
 .split-list { padding: 8px; overflow: auto; border-right: 1px solid var(--layer-stroke); }
 .split-detail { padding: 24px 28px; overflow: auto; }
+.directory-toolbar { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 28px 16px; }
+.directory-toolbar input { flex: 1; min-width: 180px; }
+.messages-workspace { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.messages-page .page-header { min-height: 48px; padding: 12px 28px 8px; }
+.messages-page .directory-toolbar { padding-bottom: 8px; }
+.messages-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.messages-workspace > .messages-actions { padding: 0 28px 8px; }
+.messages-split { grid-template-columns: minmax(180px, 220px) minmax(0, 1fr); }
+.messages-split .contact-row { min-height: 60px; }
+.messages-split .split-list > .button { margin: 8px 0; }
+.messages-detail { padding: 16px; overflow: hidden; }
+.message-conversation { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; overflow: auto; }
+.message-roster { margin-top: 4px; overflow-wrap: anywhere; max-height: 32px; overflow: auto; }
+.message-conversation .detail-title { max-height: 56px; overflow: auto; }
+.message-history { flex: 1; min-height: 40px; overflow: auto; }
+.text-message { border-left: 2px solid var(--accent); padding: 4px 12px; margin: 16px 0; }
+.message-body { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 6px; }
+.message-composer { border-top: 1px solid var(--layer-stroke); padding-top: 10px; }
+.message-composer .caption { margin: 8px 0; }
+.message-composer textarea { min-height: 56px; resize: none; }
+.message-people { max-height: 240px; overflow: auto; margin: 16px 0; }
+.message-people > div { padding: 8px 0; }
+.messages-actions .text-field { flex: 1; min-width: 140px; }
+.message-meeting-launch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.meeting-page { height: 100%; }
+.meeting-body { overflow: auto; display: flex; flex-direction: column; gap: 16px; }
+.meeting-summary { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 12px; }
+.meeting-summary p { margin: 0; }
+.meeting-status { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.meeting-controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 0; border-block: 1px solid var(--card-stroke); }
+.meeting-controls .button { white-space: nowrap; }
+.meeting-media { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.meeting-person-media { display: contents; }
+.meeting-media figure { min-width: 0; margin: 0; overflow: hidden; border: 1px solid var(--card-stroke); border-radius: 8px; }
+.meeting-screen { grid-column: 1 / -1; }
+.meeting-video { display: block; width: 100%; aspect-ratio: 16 / 9; max-height: 50vh; object-fit: contain; background: #111; }
+.meeting-media figcaption { padding: 8px 12px; font-size: 12px; }
+.meeting-media audio { display: none; }
+.meeting-devices { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 18px 0 8px; }
+.meeting-device { display: grid; gap: 6px; min-width: 180px; flex: 1 1 200px; }
+.meeting-device .select { width: 100%; }
+.meeting-table-scroll { overflow-x: auto; }
+.meeting-table { width: 100%; min-width: 500px; border-collapse: collapse; font-size: 13px; text-align: left; }
+.meeting-table th, .meeting-table td { padding: 10px 12px; border-bottom: 1px solid var(--card-stroke); }
+.meeting-table th { color: var(--text-2); font-weight: 600; }
+.meeting-table td:last-child { width: 1%; white-space: nowrap; }
+.meeting-sources { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.meeting-source { background: var(--control); border: 1px solid var(--control-stroke); border-radius: 6px; padding: 8px; color: var(--text); text-align: left; cursor: pointer; }
+.meeting-source:hover { background: var(--control-hover); }
+.meeting-source img { display: block; width: 100%; aspect-ratio: 8 / 5; object-fit: contain; background: #111; margin-bottom: 8px; }
+.meeting-source span { display: block; overflow-wrap: anywhere; font-size: 12px; }
+@media (max-width: 740px) { .meeting-media { grid-template-columns: minmax(0, 1fr); } }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.directory-notice { padding: 0 28px 12px; }
+.company-directory .page-header { flex-wrap: wrap; }
 .list-heading { padding: 10px 10px 4px; font-size: 12px; font-weight: 600; line-height: 16px; color: var(--text-2); }
 .list-empty { padding: 10px; }
 .contact-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 4px 10px; }

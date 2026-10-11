@@ -4,7 +4,7 @@ import { PINNED_EXTENSION_ID } from '../../core/extension.js';
 import { codecDisplayName, ECHO_MODES, RINGTONES, TRANSPORTS, transportName } from '../../core/models.js';
 import { isRegistered } from '../../core/sip.js';
 import {
-  Button, Checkbox, cleanError, cx, EmptyState, IconButton, InfoBar, PageHeader, Select, SettingRow, SwitchRow, TextField,
+  Button, Checkbox, cleanError, confirmDialog, cx, EmptyState, IconButton, InfoBar, PageHeader, Select, SettingRow, SwitchRow, TextField,
 } from '../components.js';
 import { html, useEffect, useRef, useState } from '../lib.js';
 import { isRinging, onRingingChange, previewRingtone, stopRinging } from '../ringer.js';
@@ -16,6 +16,7 @@ const systemName = () => (onWindows() ? 'Windows' : 'System');
 
 const TABS = [
   { id: 'general', label: 'General' },
+  { id: 'managed', label: 'Managed accounts' },
   { id: 'audio', label: 'Audio' },
   { id: 'network', label: 'Network' },
   { id: 'codecs', label: 'Codecs' },
@@ -34,6 +35,78 @@ function Section({ title, footnote, children }) {
 }
 
 const update = (patch) => act('updateSettings', patch);
+
+function ManagedSettings() {
+  const state = useAppState();
+  const ui = useUI();
+  const status = state.managed;
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState(null);
+  const run = async (action, ...args) => {
+    setWorking(true); setError(null);
+    try { await service(action, ...args); if (['managedConnectSetupLink', 'managedSignOut'].includes(action)) ui.setSetupLink(''); }
+    catch (failure) { setError(cleanError(failure)); }
+    finally { setWorking(false); }
+  };
+  const busy = working || status.busy;
+  const remove = async (deviceId, name) => {
+    const choice = await confirmDialog({
+      message: deviceId ? `Disconnect ${name}?` : 'Sign out of Sipper management?',
+      detail: 'Managed accounts will be removed from this computer. Calls already connected can finish. Your personal accounts and call history will stay.',
+      buttons: [deviceId ? 'Disconnect' : 'Sign out', 'Cancel'], defaultId: 1, cancelId: 1,
+    });
+    if (choice === 0) run(deviceId ? 'managedDisconnect' : 'managedSignOut', ...(deviceId ? [deviceId] : []));
+  };
+  return html`<div class="settings">
+    ${error || status.error ? html`<${InfoBar} severity="error" title="Managed accounts">${error || status.error}</${InfoBar}>` : null}
+    <${Section} title="Sipper management" footnote="Personal SIP accounts can be used without signing in. Managed settings and registration status are shared with your organisation.">
+      <${SettingRow} label=${status.signedIn ? status.identity.email : 'Connect your organisation'}
+        description=${status.signingIn ? 'Finish signing in in your browser, then return to Sipper.' : status.signedIn ? 'Your organisation provides and updates your calling accounts.' : 'Sign in with the email address invited by your administrator.'}>
+        ${status.signingIn
+          ? html`<${Button} onClick=${() => run('managedCancelSignIn')}>Cancel sign-in</${Button}>`
+          : html`<${Button} kind="accent" disabled=${busy} onClick=${() => run('managedSignIn')}>${status.signedIn ? 'Sign in again' : 'Sign in'}</${Button}>`}
+        ${status.signedIn ? html`<${Button} disabled=${busy || status.signingIn} onClick=${() => run('managedRefresh')}>Refresh</${Button}>` : null}
+      </${SettingRow}>
+    </${Section}>
+    <${Section} title="Message notifications" footnote="Shows a generic New message alert while Sipper is running. Message text and people's names are kept out of notifications. Windows notification settings also apply.">
+      <${SwitchRow} label="Notify me about managed messages" checked=${state.settings.messageNotifications}
+        disabled=${!status.signedIn || status.signingIn} onChange=${on => update({ messageNotifications: on })} />
+    </${Section}>
+    <${Section} title="Setup link" footnote="Paste the link from your administrator, sign in with the invited email, then connect. You can also choose your organisation below.">
+      <${TextField} label="Setup link" value=${ui.setupLink} onValue=${value => ui.setSetupLink(value.slice(0, 4096))} disabled=${busy} />
+      <${Button} disabled=${busy || status.signingIn || !status.signedIn || !ui.setupLink.trim()} onClick=${() => run('managedConnectSetupLink', ui.setupLink)}>Connect with setup link</${Button}>
+    </${Section}>
+    ${status.signedIn ? html`<${Section} title="Organisations" footnote="Availability is your stated status for this customer and stays until changed or cleared; it does not change calling. Do Not Disturb applies across your devices. Gateway calls stop immediately; direct PBX calls stop after the app refreshes its settings. Calls already ringing or connected continue. Refresh to check an unavailable preference.">
+      ${status.organisations.length === 0 ? html`<p class="settings-footnote">No organisations are available for this email address. Ask your administrator for an invitation.</p>` : null}
+      ${status.organisations.map(org => {
+        const enrollment = status.enrollments.find(e => e.organisationId === org.id);
+        const allowed = org.status === 'active' && org.licensed;
+        const description = enrollment?.configured ? `Connected · settings valid until ${new Date(enrollment.expiresAt).toLocaleString()}`
+          : enrollment ? 'Calling settings unavailable. Refresh to reconnect.' : !allowed ? 'An active membership and assigned licence are required.' : 'Connect to get your assigned calling accounts.';
+        return html`<div key=${org.id}><${SettingRow} label=${org.name} description=${description}>
+          ${enrollment
+            ? html`<${Button} disabled=${busy || status.signingIn} onClick=${() => remove(enrollment.deviceId, org.name)}>Disconnect</${Button}>`
+            : html`<${Button} disabled=${busy || status.signingIn || !allowed} onClick=${() => run('managedConnect', org.id)}>Connect</${Button}>`}
+        </${SettingRow}>
+        <${SettingRow} label="Availability">
+          <${Select} label=${`Availability for ${org.name}`} value=${org.availability ?? ''}
+            disabled=${busy || status.signingIn || org.status !== 'active' || !org.availability}
+            options=${[...(!org.availability ? [{value:'',label:'Unavailable'}] : []), {value:'unset',label:'Not set'}, {value:'available',label:'Available'}, {value:'away',label:'Away'}, {value:'busy',label:'Busy'}]}
+            onChange=${value => run('managedAvailability', org.id, value)} />
+        </${SettingRow}>
+        <${SettingRow} label="Do Not Disturb" description=${typeof org.doNotDisturb === 'boolean' ? (org.doNotDisturb ? 'On' : 'Off') : 'Unavailable'}>
+          <${Button} disabled=${busy || status.signingIn || org.status !== 'active' || typeof org.doNotDisturb !== 'boolean'}
+            aria-label=${`${org.doNotDisturb ? 'Turn off' : 'Turn on'} Do Not Disturb for ${org.name}`}
+            onClick=${() => run('managedDoNotDisturb', org.id, !org.doNotDisturb)}>${org.doNotDisturb ? 'Turn off' : 'Turn on'}</${Button}>
+        </${SettingRow}></div>`;
+      })}
+      ${status.enrollments.filter(e => !status.organisations.some(o => o.id === e.organisationId)).map(entry => html`<${SettingRow} key=${entry.deviceId} label="Unavailable organisation" description="This organisation is no longer available to your account.">
+        <${Button} disabled=${busy || status.signingIn} onClick=${() => remove(entry.deviceId, 'this organisation')}>Disconnect</${Button}>
+      </${SettingRow}>`)}
+    </${Section}>` : null}
+    ${status.signedIn || status.error ? html`<${Button} disabled=${busy} onClick=${() => remove(null)}>Sign out${status.signedIn ? '' : ' locally'}</${Button}>` : null}
+  </div>`;
+}
 
 function GeneralSettings() {
   const state = useAppState();
@@ -450,6 +523,7 @@ function AboutSettings() {
 
 const PANELS = {
   general: GeneralSettings,
+  managed: ManagedSettings,
   audio: AudioSettings,
   network: NetworkSettings,
   codecs: CodecSettings,
@@ -462,6 +536,7 @@ const PANELS = {
 export function SettingsPage() {
   const ui = useUI();
   const [tab, setTab] = useState(ui.selection.tab ?? 'general');
+  useEffect(() => { if (PANELS[ui.selection.tab]) setTab(ui.selection.tab); }, [ui.selection]);
   const Panel = PANELS[tab];
   const onKeyDown = (event, index) => {
     const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;

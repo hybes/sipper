@@ -1,0 +1,134 @@
+name: SipperIOS
+options:
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+configs:
+  Debug: debug
+  Release: release
+packages:
+  SipperManaged:
+    path: ../packages/SipperManaged
+settings:
+  base:
+    ARCHS: arm64
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+targets:
+  SipperIOS:
+    type: application
+    platform: iOS
+    productName: Sipper
+    sources:
+      - path: Sipper
+      - path: ../Sipper/SIP
+      - path: ../Sipper/Models/SIPAccount.swift
+      - path: ../Sipper/Models/SIPTransport.swift
+      - path: ../Sipper/Models/AppSettings.swift
+      - path: ../Sipper/Models/CallRecord.swift
+      - path: ../Sipper/Models/CodableDefaults.swift
+      - path: ../Sipper/Models/ManagedAccountMapper.swift
+      - path: ../Sipper/Import/ImportParser.swift
+    info:
+      path: Sipper/Info.plist
+      properties:
+        CFBundleDisplayName: Sipper
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        NSMicrophoneUsageDescription: Sipper uses your microphone during calls.
+        NSCameraUsageDescription: Sipper uses your camera when you turn it on in a meeting.
+        NSLocalNetworkUsageDescription: Sipper connects to phone systems on your local network when you configure them.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        UIBackgroundModes: [audio, voip]
+        SipperPushEnabled: $(SIPPER_PUSH_ENABLED)
+        CFBundleURLTypes:
+          - CFBundleURLName: com.hybes.sipper.oauth
+            CFBundleURLSchemes: [com.hybes.sipper, sipper]
+            CFBundleTypeRole: Viewer
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hybes.sipper.ios
+        PRODUCT_NAME: Sipper
+        PRODUCT_MODULE_NAME: SipperIOS
+        SIPPER_PUSH_ENABLED: NO
+        CODE_SIGN_ENTITLEMENTS: Sipper/Sipper.entitlements
+        SIPPER_APNS_ENVIRONMENT: production
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        SWIFT_OBJC_BRIDGING_HEADER: ../Sipper/SIP/Bridging/Sipper-Bridging-Header.h
+        HEADER_SEARCH_PATHS: ["$(SRCROOT)/vendor/pjsip/$(PLATFORM_NAME)/include"]
+        LIBRARY_SEARCH_PATHS: ["$(SRCROOT)/vendor/pjsip/$(PLATFORM_NAME)/lib"]
+        OTHER_LDFLAGS: ["$(inherited)", "-lpjproject", "-lc++"]
+        GCC_PREPROCESSOR_DEFINITIONS: ["$(inherited)", "PJ_AUTOCONF=1"]
+        OTHER_SWIFT_FLAGS: ["$(inherited)", "-Xcc", "-DPJ_AUTOCONF=1"]
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.hybes.sipper.ios.development
+          SIPPER_APNS_ENVIRONMENT: development
+    dependencies:
+      - package: SipperManaged
+      - sdk: AVFoundation.framework
+      - sdk: AVKit.framework
+      - sdk: AudioToolbox.framework
+      - sdk: CoreAudio.framework
+      - sdk: CoreFoundation.framework
+      - sdk: CFNetwork.framework
+      - sdk: Network.framework
+      - sdk: Security.framework
+      - sdk: CallKit.framework
+      - sdk: PushKit.framework
+    postBuildScripts:
+      - name: Copy licence texts
+        script: |
+          set -eu
+          output="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Licenses"
+          rm -rf "$output"
+          cp -R "$SRCROOT/vendor/pjsip/$PLATFORM_NAME/Licenses" "$output"
+          chmod -R u+w "$output"
+          cp "$SRCROOT"/../packages/SipperManaged/Sources/SipperManaged/Resources/Licenses/* "$output/"
+        basedOnDependencyAnalysis: false
+        showEnvVars: false
+  SipperIOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests, ../SipperTests/Shared]
+    dependencies:
+      - target: SipperIOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hybes.sipper.ios.tests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Sipper.app/Sipper"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        GENERATE_INFOPLIST_FILE: YES
+        HEADER_SEARCH_PATHS: ["$(SRCROOT)/vendor/pjsip/$(PLATFORM_NAME)/include"]
+        OTHER_SWIFT_FLAGS: ["$(inherited)", "-Xcc", "-DPJ_AUTOCONF=1"]
+schemes:
+  SipperIOS:
+    build:
+      targets:
+        SipperIOS: all
+        SipperIOSTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets: [SipperIOSTests]
+      environmentVariables:
+        SIPPER_TEST_REGISTRAR: "$(SIPPER_TEST_REGISTRAR)"
+        SIPPER_TEST_GATEWAY_FILE: "$(SIPPER_TEST_GATEWAY_FILE)"
+        SIPPER_TEST_PORTAL_FILE: "$(SIPPER_TEST_PORTAL_FILE)"
+        SIPPER_TEST_DIRECT_DND: "$(SIPPER_TEST_DIRECT_DND)"
+    archive:
+      config: Release

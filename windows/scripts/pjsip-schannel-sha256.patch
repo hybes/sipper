@@ -1,0 +1,80 @@
+--- a/pjsip/src/pjsip/sip_auth_client.c
++++ b/pjsip/src/pjsip/sip_auth_client.c
+@@ -57,6 +57,77 @@
+ #  endif
+ 
+ #  define DEFINE_HASH_CONTEXT EVP_MD_CTX* mdctx
++
++#elif defined(_WIN32) && PJ_SSL_SOCK_IMP==PJ_SSL_SOCK_IMP_SCHANNEL
++/* Sipper: retain Schannel's certificate verification and use Windows CNG for
++ * SHA-256 digest. Crypto failures abort authentication; there is no downgrade.
++ */
++#include <windows.h>
++#include <bcrypt.h>
++#include <limits.h>
++#pragma comment(lib, "bcrypt.lib")
++#define MD5_DIGEST_LENGTH (PJSIP_MD5STRLEN / 2)
++#define SHA256_DIGEST_LENGTH (PJSIP_SHA256STRLEN / 2)
++typedef struct sipper_digest_context {
++    pj_bool_t sha256;
++    pj_md5_context md5;
++    BCRYPT_ALG_HANDLE algorithm;
++    BCRYPT_HASH_HANDLE hash;
++} sipper_digest_context;
++static const char *sipper_digest_name(const char *name)
++{
++    return pj_ansi_strcmp(name, "MD5") == 0 ||
++           pj_ansi_strcmp(name, "SHA256") == 0 ? name : NULL;
++}
++static void sipper_digest_free(sipper_digest_context *ctx)
++{
++    if (ctx->hash) BCryptDestroyHash(ctx->hash);
++    if (ctx->algorithm) BCryptCloseAlgorithmProvider(ctx->algorithm, 0);
++    SecureZeroMemory(ctx, sizeof(*ctx));
++}
++static int sipper_digest_init(sipper_digest_context *ctx, const char *name)
++{
++    pj_bzero(ctx, sizeof(*ctx));
++    ctx->sha256 = pj_ansi_strcmp(name, "SHA256") == 0;
++    if (!ctx->sha256) { pj_md5_init(&ctx->md5); return 1; }
++    if (BCryptOpenAlgorithmProvider(&ctx->algorithm, BCRYPT_SHA256_ALGORITHM, NULL, 0) >= 0 &&
++        BCryptCreateHash(ctx->algorithm, &ctx->hash, NULL, 0, NULL, 0, 0) >= 0) return 1;
++    sipper_digest_free(ctx);
++    return 0;
++}
++static int sipper_digest_update(sipper_digest_context *ctx, const void *data, size_t length)
++{
++    const unsigned char *bytes = (const unsigned char *)data;
++    while (length) {
++        unsigned count = (unsigned)(length > UINT_MAX ? UINT_MAX : length);
++        if (ctx->sha256) {
++            if (BCryptHashData(ctx->hash, (PUCHAR)bytes, count, 0) < 0) {
++                sipper_digest_free(ctx); return 0;
++            }
++        } else pj_md5_update(&ctx->md5, bytes, count);
++        bytes += count;
++        length -= count;
++    }
++    return 1;
++}
++static int sipper_digest_final(sipper_digest_context *ctx, unsigned char *out, unsigned *length)
++{
++    if (ctx->sha256) {
++        if (BCryptFinishHash(ctx->hash, out, SHA256_DIGEST_LENGTH, 0) < 0) {
++            sipper_digest_free(ctx); return 0;
++        }
++    } else pj_md5_final(&ctx->md5, out);
++    if (length) *length = ctx->sha256 ? SHA256_DIGEST_LENGTH : MD5_DIGEST_LENGTH;
++    return 1;
++}
++#define EVP_MD char
++#define DEFINE_HASH_CONTEXT sipper_digest_context pmc; sipper_digest_context *mdctx
++#define EVP_get_digestbyname(name) sipper_digest_name(name)
++#define EVP_MD_CTX_new() &pmc
++#define EVP_DigestInit_ex(ctx, md, unused) do { if (!sipper_digest_init(ctx, md)) return PJ_EUNKNOWN; } while (0)
++#define EVP_DigestUpdate(ctx, data, length) do { if (!sipper_digest_update(ctx, data, length)) return PJ_EUNKNOWN; } while (0)
++#define EVP_DigestFinal_ex(ctx, digest, length) do { if (!sipper_digest_final(ctx, digest, length)) return PJ_EUNKNOWN; } while (0)
++#define EVP_MD_CTX_free(ctx) sipper_digest_free(ctx)
+ 
+ #else
+ #define HAVE_NO_OPENSSL 1

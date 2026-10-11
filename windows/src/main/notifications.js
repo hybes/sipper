@@ -84,6 +84,20 @@ export class CallNotifications {
     this.#show(new Notification({ title: 'Missed call', body: recordDisplayName(record) }), this.onOpenHistory);
   }
 
+  showMessage(onClick) {
+    this.clearMessages();
+    if (!this.supported) return;
+    const notification = new Notification({ title: 'Sipper', body: 'New message' });
+    this.message = notification;
+    notification.on('close', () => { if (this.message === notification) this.message = null; });
+    notification.on('click', onClick);
+    notification.show();
+  }
+
+  clearMessages() {
+    const notification = this.message; this.message = null; notification?.close();
+  }
+
   showTest() {
     if (!this.supported) return false;
     this.#show(new Notification({

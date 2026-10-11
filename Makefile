@@ -48,7 +48,7 @@ XCODEBUILD   := xcodebuild -project $(PROJECT) -scheme $(SCHEME) -derivedDataPat
 
 all: app
 
-vendor/pjsip/lib/libpjproject.a:
+vendor/pjsip/lib/libpjproject.a: scripts/build-pjsip.sh scripts/patches/pjsip-apple-sha256.patch
 	scripts/build-pjsip.sh
 
 pjsip: vendor/pjsip/lib/libpjproject.a

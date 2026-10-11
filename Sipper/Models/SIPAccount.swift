@@ -33,6 +33,8 @@ struct SIPAccount: Identifiable, Codable, Hashable {
     var updatedAt: Date
     /// Where the account came from ("manual", "fusionpbx", ...).
     var source: String
+    /// Runtime-only binding. Managed configuration is restored from device-only Keychain.
+    var managed: ManagedAccountBinding? = nil
 
     init(id: UUID = UUID(),
          profileID: UUID,
@@ -192,4 +194,14 @@ struct SIPAccount: Identifiable, Codable, Hashable {
         if !(60...86400).contains(registrationExpiry) { errors.append("Registration expiry must be between 60 and 86400 seconds.") }
         return errors
     }
+}
+
+struct ManagedAccountBinding: Hashable {
+    enum Mode: String { case direct, gateway }
+    let organisationID: UUID
+    let deviceID: UUID
+    let accountID: UUID
+    let expiresAt: Date
+    var mode: Mode = .direct
+    var doNotDisturb: Bool = false
 }

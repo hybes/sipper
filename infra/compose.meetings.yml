@@ -1,0 +1,46 @@
+# Combine with compose.app.yml and enable --profile meetings. Only WebRTC media
+# ports are public. Terminate WSS at the host's existing HTTPS reverse proxy.
+services:
+  meetings-media:
+    image: livekit/livekit-server:v1.9.12@sha256:2c13cbf2edcbf13ea7b20d05c10b394d04d8fb3fe358269cff845a90b4de9576
+    profiles: [meetings]
+    command: [--config, /etc/sipper/livekit.yaml]
+    user: ${SIPPER_MEETING_UID:-1000}:${SIPPER_MEETING_GID:-1000}
+    volumes:
+      - type: bind
+        source: ${SIPPER_MEETING_CONFIG_FILE:?Set an absolute path to the private LiveKit configuration}
+        target: /etc/sipper/livekit.yaml
+        read_only: true
+        bind: { create_host_path: false }
+    ports:
+      - "7882:7882/tcp"
+      - "7883:7883/udp"
+    # Do not publish 7880, and do not proxy public requests directly to it.
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp:rw,noexec,nosuid,size=16m]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: { driver: json-file, options: { max-size: 10m, max-file: "3" } }
+  meetings-signalling:
+    image: ${SIPPER_CONTROLLER_IMAGE:-sipper-controller:local}
+    build: { context: ../gateway }
+    profiles: [meetings]
+    command: [node, src/meeting-proxy.mjs]
+    env_file:
+      - path: ${SIPPER_MEETING_PROXY_ENV_FILE:?Set an absolute path to the private signalling environment file}
+        format: raw
+    environment: { HOST: 0.0.0.0, PORT: 7881 }
+    ports: ["127.0.0.1:${SIPPER_MEETING_SIGNAL_PORT:-17881}:7881"]
+    depends_on: [meetings-media, portal]
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:7881/health', {signal: AbortSignal.timeout(4000)}).then(r => {if (!r.ok) process.exit(1)}).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: { driver: json-file, options: { max-size: 10m, max-file: "3" } }

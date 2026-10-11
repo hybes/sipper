@@ -10,8 +10,8 @@ export class SafeStoragePasswordStore {
    * @param {string} directory  data folder
    * @param {Electron.SafeStorage} safeStorage
    */
-  constructor(directory, safeStorage) {
-    this.file = path.join(directory, 'passwords.json');
+  constructor(directory, safeStorage, fileName = 'passwords.json') {
+    this.file = path.join(directory, fileName);
     this.safeStorage = safeStorage;
     this.entries = this.#read();
   }

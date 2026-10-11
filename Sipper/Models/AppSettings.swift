@@ -61,6 +61,7 @@ struct AppSettings: Codable, Hashable {
 
     // Behaviour
     var showNotifications: Bool
+    var messageNotifications: Bool
     var showIncomingCallAlert: Bool
     var doNotDisturb: Bool
     var launchAtLogin: Bool
@@ -99,6 +100,7 @@ struct AppSettings: Codable, Hashable {
         echoTailMilliseconds = 200
         codecs = []
         showNotifications = true
+        messageNotifications = false
         showIncomingCallAlert = true
         doNotDisturb = false
         launchAtLogin = false
@@ -125,7 +127,7 @@ struct AppSettings: Codable, Hashable {
 
     private enum CodingKeys: String, CodingKey {
         case inputDeviceName, outputDeviceName, ringtone, ringVolume, echoMode
-        case echoTailMilliseconds, codecs, showNotifications, showIncomingCallAlert, doNotDisturb, launchAtLogin
+        case echoTailMilliseconds, codecs, showNotifications, messageNotifications, showIncomingCallAlert, doNotDisturb, launchAtLogin
         case startHidden, showMenuBarItem, muteMicrophoneOnAnswer, confirmBeforeHangUp, iCloudSync, iCloudSyncHistory
         case recordCalls, recordingsFolderPath, convertRecordingsToM4A, autoAnswerSeconds
         case lastUsedAccountID, stunServer, verifyTLSCertificates, localUDPPort, localTCPPort, localTLSPort
@@ -143,6 +145,7 @@ struct AppSettings: Codable, Hashable {
         echoTailMilliseconds = c.decode(.echoTailMilliseconds, default: d.echoTailMilliseconds)
         codecs = c.decode(.codecs, default: d.codecs)
         showNotifications = c.decode(.showNotifications, default: d.showNotifications)
+        messageNotifications = c.decode(.messageNotifications, default: d.messageNotifications)
         showIncomingCallAlert = c.decode(.showIncomingCallAlert, default: d.showIncomingCallAlert)
         doNotDisturb = c.decode(.doNotDisturb, default: d.doNotDisturb)
         launchAtLogin = c.decode(.launchAtLogin, default: d.launchAtLogin)

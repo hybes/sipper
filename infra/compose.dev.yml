@@ -1,0 +1,24 @@
+name: sipper-platform-dev
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: sipper
+      POSTGRES_PASSWORD: sipper_local_only
+      POSTGRES_DB: sipper
+    ports:
+      - "127.0.0.1:5547:5432"
+    volumes:
+      - sipper-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sipper -d sipper"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "127.0.0.1:1029:1025"
+      - "127.0.0.1:8030:8025"
+volumes:
+  sipper-postgres:

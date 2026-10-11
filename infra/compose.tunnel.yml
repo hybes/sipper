@@ -1,0 +1,34 @@
+# Optional overlay. Run alongside compose.app.yml only after configuring a
+# remotely managed tunnel whose HTTPS origin hostname targets http://portal:3100.
+services:
+  tunnel:
+    image: cloudflare/cloudflared:2026.9.1@sha256:b269e8abd07a5bf6f3f4be65d5050b2174eca89c56a0241a8ff32a16aec454e4
+    command: [tunnel, --no-autoupdate, --metrics, "127.0.0.1:2000", run, --token-file, /run/secrets/tunnel-token]
+    user: "65532:65532"
+    volumes:
+      - type: bind
+        source: ${SIPPER_TUNNEL_TOKEN_FILE:?Set an absolute private tunnel-token file path}
+        target: /run/secrets/tunnel-token
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      portal: { condition: service_healthy }
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=4m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 30s
+    healthcheck:
+      test: [CMD, cloudflared, tunnel, --metrics, "127.0.0.1:2000", ready]
+      interval: 30s
+      timeout: 5s
+      start_period: 45s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

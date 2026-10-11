@@ -18,7 +18,7 @@ export function DialerPage() {
   const ui = useUI();
   const call = activeCall(state);
   let body;
-  if (call) {
+  if (call && !state.showingNewCall) {
     body = html`<${ActiveCall} key=${`${call.id}:${call.startedAt}`} call=${call} />`;
   } else if (state.accounts.length === 0) {
     body = html`<${EmptyState} icon="call" title="No SIP accounts"
@@ -43,6 +43,7 @@ function IdleDialer() {
   const clearTimer = useRef(null);
   const cleared = useRef(false);
   const account = dialerAccount(state);
+  const call = activeCall(state);
   const status = account ? registrationOf(state, account.id) : null;
   const recent = state.history.slice(0, 5);
 
@@ -65,7 +66,16 @@ function IdleDialer() {
     }))
     .filter((group) => group.options.length > 0);
 
-  return html`<div class="dialer">
+  return html`<div class="dialer" onKeyDown=${(event) => {
+    if (call && event.key === 'Escape' && !event.defaultPrevented) {
+      event.preventDefault();
+      act('selectCall', call.id);
+    }
+  }}>
+    ${call ? html`<div class="new-call-return">
+      <${Button} onClick=${() => act('selectCall', call.id)} title="Return to the current call (Escape)">Return to ${callDisplayName(call)}</${Button}>
+      <p class="caption">Your current call will be held when you place another.</p>
+    </div>` : null}
     <div class="dialer-from">
       <label class="caption" for="dialer-account">From</label>
       <${Select} id="dialer-account" value=${account?.id} groups=${groups} onChange=${(id) => act('setDialerAccount', id)} />
@@ -73,7 +83,7 @@ function IdleDialer() {
     </div>
 
     <div class="dialer-number">
-      <input ref=${input} class="dialer-number-input selectable" value=${ui.dialString} placeholder="Number or SIP address"
+      <input ref=${input} class="dialer-number-input selectable" value=${ui.dialString} placeholder=${account?.managed?.mode === 'gateway' ? 'Phone number or extension' : 'Number or SIP address'}
         aria-label="Number to call" spellcheck=${false}
         onInput=${(event) => ui.setDialString(event.currentTarget.value)}
         onKeyDown=${(event) => {
@@ -111,6 +121,7 @@ function IdleDialer() {
         onClick=${() => act('callVoicemail', account?.id ?? null)}>Voicemail</${Button}>
       <${Button} size="large" kind="success" icon="call" disabled=${!ui.dialString.trim()} onClick=${place}>Call</${Button}>
     </div>
+    ${state.meetingActive ? html`<p class="caption" role="status">Calling will leave your meeting.</p>` : null}
 
     ${recent.length > 0 ? html`<section class="recent" aria-label="Recent calls">
       <div class="recent-header">
@@ -130,15 +141,22 @@ function IdleDialer() {
 function ActiveCall({ call }) {
   const state = useAppState();
   const [showKeypad, setShowKeypad] = useState(false);
+  const [keypadCall, setKeypadCall] = useState(null);
   const [digitsSent, setDigitsSent] = useState('');
   const [transferOpen, setTransferOpen] = useState(false);
   const [target, setTarget] = useState('');
   const account = accountByID(state, call.accountID);
-  const others = state.calls.filter((other) => other.id !== call.id);
+  const members = call.conferenceID ? state.calls.filter(other => other.conferenceID === call.conferenceID) : [];
+  const conferencing = members.length === 2;
+  const onHold = conferencing ? members.some(member => member.isOnHold) : call.isOnHold;
+  const others = state.calls.filter((other, index, calls) => other.id !== call.id &&
+    (!call.conferenceID || other.conferenceID !== call.conferenceID) &&
+    (!other.conferenceID || calls.findIndex(c => c.conferenceID === other.conferenceID) === index));
   const connected = call.state === 'confirmed';
 
   const sendDigits = (digits) => {
-    act('sendDTMF', digits, call.id);
+    if (conferencing && !keypadCall) return;
+    act('sendDTMF', digits, keypadCall || call);
     setDigitsSent((sent) => sent + digits);
   };
 
@@ -154,7 +172,16 @@ function ActiveCall({ call }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [connected, call.id]);
+  }, [connected, call.id, call.startedAt, call.conferenceID, keypadCall]);
+
+  useEffect(() => {
+    if (onHold) { setShowKeypad(false); setKeypadCall(null); }
+    if (keypadCall && !state.calls.some(c => c.id === keypadCall.id && c.startedAt === keypadCall.startedAt &&
+        c.accountID === keypadCall.accountID && c.conferenceID === keypadCall.conferenceID)) {
+      setKeypadCall(null); setShowKeypad(false); setDigitsSent('');
+    }
+    if (conferencing) setTransferOpen(false);
+  }, [state.calls, conferencing, keypadCall, onHold]);
 
   const transferInput = useRef(null);
   useEffect(() => {
@@ -167,78 +194,110 @@ function ActiveCall({ call }) {
   const blindTransfer = () => {
     const destination = target.trim();
     if (!destination) return;
-    act('transfer', call.id, destination);
+    act('transfer', call, destination);
     setTarget('');
     setTransferOpen(false);
   };
-  const connectedOthers = others.filter((other) => other.state === 'confirmed');
+  const connectedOthers = others.filter((other) => other.state === 'confirmed' && other.accountID === call.accountID && !other.isTransferring && !other.conferenceID);
 
   return html`<div class="active-call">
+    ${state.meetingActive ? html`<p class="caption" role="status">Answering or resuming a phone call will leave your meeting.</p>` : null}
     <div class="active-call-header">
-      <span class=${cx('active-call-icon', connected && 'connected')}>
+      ${!conferencing ? html`<span class=${cx('active-call-icon', connected && 'connected')}>
         <${Icon} name=${call.direction === 'incoming' ? 'callIncomingFilled' : 'callOutgoingFilled'} size=${28} />
-      </span>
-      <h2 class="active-call-name selectable">${callDisplayName(call)}</h2>
-      ${call.remoteName ? html`<p class="active-call-number selectable">${call.remoteNumber}</p>` : null}
-      <p class="active-call-status" aria-live="polite"><${CallStatusText} call=${call} /></p>
+      </span>` : null}
+      <h2 class="active-call-name selectable">${conferencing ? 'Conference' : callDisplayName(call)}</h2>
+      ${!conferencing && call.remoteName ? html`<p class="active-call-number selectable">${call.remoteNumber}</p>` : null}
+      <p class="active-call-status" aria-live="polite">${conferencing
+        ? members.every(c => c.isOnHold) ? 'On hold' : onHold ? 'One participant on hold' : 'Connected'
+        : html`<${CallStatusText} call=${call} />`}</p>
       ${account ? html`<p class="caption">via ${displayLabel(account)}</p>` : null}
       ${call.isRecording ? html`<p class="recording-badge"><${Icon} name="record" size=${12} />Recording</p>` : null}
       ${digitsSent ? html`<p class="dtmf-history mono" aria-label=${`Digits sent: ${digitsSent}`}>${digitsSent}</p>` : null}
     </div>
 
+    ${conferencing ? html`<section class="conference-participants" aria-label="Conference participants">
+      ${members.map(member => html`<div class="conference-participant" key=${`${member.id}:${member.startedAt}`}>
+        <div class="other-call-text"><strong class="selectable">${callDisplayName(member)}</strong>
+          <span class="caption"><${CallStatusText} call=${member} />${member.isRecording ? ' · Recording' : ''}</span>
+        </div>
+        <div class="conference-participant-actions">
+          <${Button} disabled=${state.changingAudio || member.isOnHold} onClick=${() => {
+            setKeypadCall(member); setDigitsSent(''); setShowKeypad(true);
+          }}>Keypad</${Button}>
+          <${Button} disabled=${state.changingAudio} title=${`Talk to ${callDisplayName(member)} separately; hold the other participant`}
+            onClick=${() => act('separateConference', member)}>Separate</${Button}>
+          <${IconButton} kind="danger" icon="callEnd" label=${`Remove ${callDisplayName(member)} from the conference`}
+            onClick=${() => act('hangup', member)} />
+        </div>
+      </div>`)}
+    </section>` : null}
+
     ${call.state === 'incoming' ? html`<div class="call-answer-row">
       <${Button} size="large" kind="danger" icon="callEnd" title="Decline (Ctrl+Shift+D)" onClick=${() => act('decline', call.id)}>Decline</${Button}>
-      <${Button} size="large" kind="success" icon="call" title="Answer (Ctrl+Enter)" onClick=${() => act('answer', call.id)}>Answer</${Button}>
+      <${Button} size="large" kind="success" icon="call" title="Answer (Ctrl+Enter)" onClick=${() => act('answer', call.id)}>${state.meetingActive ? 'Switch & answer' : 'Answer'}</${Button}>
     </div>` : html`
-      ${showKeypad ? html`<${Keypad} compact onKey=${sendDigits} />` : null}
+      ${showKeypad ? html`${conferencing && keypadCall ? html`<div class="conference-participant-actions">
+        <p class="caption">Keypad for ${callDisplayName(keypadCall)}</p>
+        <${Button} onClick=${() => { setShowKeypad(false); setKeypadCall(null); }}>Close keypad</${Button}>
+      </div>` : null}
+        <${Keypad} compact onKey=${sendDigits} />` : null}
       <div class="call-controls">
         <${CallControl} icon=${call.isMuted ? 'micOff' : 'mic'} label=${call.isMuted ? 'Unmute' : 'Mute'} shortcut="Ctrl+Shift+M"
-          active=${call.isMuted} disabled=${!connected} onClick=${() => act('toggleMute', call.id)} />
-        <${CallControl} icon=${call.isOnHold ? 'play' : 'pause'} label=${call.isOnHold ? 'Resume' : 'Hold'} shortcut="Ctrl+Shift+H"
-          active=${call.isOnHold} disabled=${!connected} onClick=${() => act('toggleHold', call.id)} />
-        <${CallControl} icon="keypad" label="Keypad" active=${showKeypad} disabled=${!connected} onClick=${() => setShowKeypad((open) => !open)} />
-        <${CallControl} icon="transfer" label="Transfer" active=${transferOpen} disabled=${!connected} onClick=${() => setTransferOpen((open) => !open)} />
+          active=${call.isMuted} disabled=${!connected} onClick=${() => act('toggleMute', call)} />
+        <${CallControl} icon=${onHold ? 'play' : 'pause'} label=${onHold ? 'Resume' : 'Hold'} shortcut="Ctrl+Shift+H"
+          active=${onHold} disabled=${!connected || state.changingAudio} onClick=${() => act('toggleHold', call)} />
+        ${!conferencing ? html`<${CallControl} icon="keypad" label="Keypad" active=${showKeypad} disabled=${!connected} onClick=${() => setShowKeypad((open) => !open)} />
+          <${CallControl} icon="transfer" label="Transfer" active=${transferOpen} disabled=${!connected || call.isTransferring || state.changingAudio} onClick=${() => setTransferOpen((open) => !open)} />` : null}
         <${CallControl} icon=${call.isRecording ? 'recordStop' : 'record'} label=${call.isRecording ? 'Stop' : 'Record'} tone="recording"
-          active=${call.isRecording} disabled=${!connected} onClick=${() => act('toggleRecording', call.id)} />
+          active=${call.isRecording} disabled=${!connected} onClick=${() => act('toggleRecording', call)} />
       </div>
+      ${!conferencing && !call.isTransferring && connectedOthers.length > 0 ? html`<div class="conference-merge-actions">
+        ${connectedOthers.map(other => html`<${Button} key=${`${other.id}:${other.startedAt}`} disabled=${state.changingAudio}
+          onClick=${() => act('mergeConference', call, other)}>Merge with ${callDisplayName(other)}</${Button}>`)}
+      </div>` : null}
       ${transferOpen ? html`<div class="transfer-panel card">
         <label class="field">
           <span class="field-label">Transfer to</span>
           <span class="inline-form">
-            <input class="text-field" ref=${transferInput} value=${target} placeholder="Number or SIP address" spellcheck=${false}
+            <input class="text-field" ref=${transferInput} value=${target} placeholder=${account?.managed?.mode === 'gateway' ? 'Phone number or extension' : 'Number or SIP address'} spellcheck=${false}
               onInput=${(event) => setTarget(event.currentTarget.value)}
               onKeyDown=${(event) => {
                 if (event.key === 'Enter') blindTransfer();
                 if (event.key === 'Escape') setTransferOpen(false);
               }} />
-            <${Button} kind="accent" disabled=${!target.trim()} onClick=${blindTransfer}>Transfer</${Button}>
+            <${Button} kind="accent" disabled=${!connected || call.isTransferring || state.changingAudio || !target.trim()} onClick=${blindTransfer}>Transfer</${Button}>
           </span>
         </label>
         ${connectedOthers.length > 0 ? html`<p class="caption">Or connect this caller with another call</p>
-          ${connectedOthers.map((other) => html`<${Button} key=${other.id} onClick=${() => {
-            act('attendedTransfer', call.id, other.id);
+          ${connectedOthers.map((other) => html`<${Button} key=${other.id} disabled=${!connected || call.isTransferring || state.changingAudio} onClick=${() => {
+            act('attendedTransfer', call, other);
             setTransferOpen(false);
           }}>Connect with ${callDisplayName(other)}</${Button}>`)}` : null}
       </div>` : null}
-      <${Button} size="large" kind="danger" icon="callEnd" block title="Hang up (Ctrl+Enter)" onClick=${() => act('hangup', call.id)}>
-        ${connected ? 'Hang up' : 'Cancel'}
-      </${Button}>`}
+      <div class=${connected ? 'call-answer-row' : ''}>
+      ${connected ? html`<${Button} size="large" icon="call" disabled=${call.isTransferring || state.changingAudio} title="Add call (Ctrl+N)" onClick=${() => act('prepareNewCall', '', call.accountID)}>Add call</${Button}>` : null}
+      <${Button} size="large" kind="danger" icon="callEnd" block title="Hang up (Ctrl+Enter)" onClick=${() => act(conferencing ? 'endConference' : 'hangup', call)}>
+        ${conferencing ? 'End conference' : connected ? 'Hang up' : 'Cancel'}
+      </${Button}>
+      </div>`}
 
-    ${state.transferStatus ? html`<p class="caption transfer-status" aria-live="polite">${state.transferStatus}</p>` : null}
+    ${call.transferStatus ? html`<p class="caption transfer-status" aria-live="polite">${call.transferStatus}</p>` : null}
 
     ${others.length > 0 ? html`<section class="other-calls" aria-label="Other calls">
       <h3 class="caption">Other calls</h3>
       ${others.map((other) => html`<div key=${other.id} class="other-call card">
         <${Icon} name=${other.state === 'incoming' ? 'callIncoming' : 'pause'} className=${other.state === 'incoming' ? 'success-text' : 'secondary'} />
         <div class="other-call-text">
-          <span class="ellipsis">${callDisplayName(other)}</span>
+          <span class="ellipsis">${other.conferenceID ? 'Conference' : callDisplayName(other)}</span>
           <span class="caption"><${CallStatusText} call=${other} /></span>
         </div>
         ${other.state === 'incoming' ? html`
           <${Button} kind="success" onClick=${() => act('answer', other.id)}>Answer</${Button}>
           <${Button} onClick=${() => act('decline', other.id)}>Decline</${Button}>` : html`
-          <${Button} onClick=${() => act('swapToCall', other.id)}>Swap</${Button}>
-          <${IconButton} kind="danger" icon="callEnd" label="Hang up this call" onClick=${() => act('hangup', other.id)} />`}
+          <${Button} disabled=${state.changingAudio} onClick=${() => act('swapToCall', other)}>Swap</${Button}>
+          <${IconButton} kind="danger" icon="callEnd" label=${other.conferenceID ? 'End this conference' : 'Hang up this call'}
+            onClick=${() => act(other.conferenceID ? 'endConference' : 'hangup', other)} />`}
       </div>`)}
     </section>` : null}
   </div>`;
@@ -254,18 +313,19 @@ export function CallBanner() {
   return html`<div class="call-banner" role="region" aria-label="Current call">
     <${Icon} name=${call.state === 'incoming' ? 'callIncomingFilled' : 'call'} className=${call.state === 'incoming' ? 'success-text' : 'accent-text'} />
     <div class="call-banner-text">
-      <strong class="ellipsis">${callDisplayName(call)}</strong>
+      <strong class="ellipsis">${call.conferenceID ? 'Conference' : callDisplayName(call)}</strong>
       <span class="caption"><${CallStatusText} call=${call} />${call.isRecording ? ' · Recording' : ''}</span>
     </div>
     ${state.calls.length > 1 ? html`<span class="caption">${state.calls.length} calls</span>` : null}
     ${call.state === 'incoming' ? html`
-      <${Button} kind="success" onClick=${() => act('answer', call.id)}>Answer</${Button}>
+      <${Button} kind="success" onClick=${() => act('answer', call.id)}>${state.meetingActive ? 'Switch & answer' : 'Answer'}</${Button}>
       <${Button} kind="danger" onClick=${() => act('decline', call.id)}>Decline</${Button}>` : html`
       <${IconButton} kind="standard" icon=${call.isMuted ? 'micOff' : 'mic'} label=${call.isMuted ? 'Unmute' : 'Mute'}
-        active=${call.isMuted} disabled=${!connected} onClick=${() => act('toggleMute', call.id)} />
+        active=${call.isMuted} disabled=${!connected} onClick=${() => act('toggleMute', call)} />
       <${IconButton} kind="standard" icon=${call.isOnHold ? 'play' : 'pause'} label=${call.isOnHold ? 'Resume' : 'Hold'}
-        active=${call.isOnHold} disabled=${!connected} onClick=${() => act('toggleHold', call.id)} />
-      <${IconButton} kind="danger" icon="callEnd" label="Hang up" onClick=${() => act('hangup', call.id)} />`}
-    <${Button} onClick=${() => ui.navigate({ kind: 'dialer' })}>Show</${Button}>
+        active=${call.isOnHold} disabled=${!connected || state.changingAudio} onClick=${() => act('toggleHold', call)} />
+      <${IconButton} kind="danger" icon="callEnd" label=${call.conferenceID ? 'End conference' : 'Hang up'}
+        onClick=${() => act(call.conferenceID ? 'endConference' : 'hangup', call)} />`}
+    <${Button} onClick=${() => { act('selectCall', call.id); ui.navigate({ kind: 'dialer' }); }}>Show</${Button}>
   </div>`;
 }

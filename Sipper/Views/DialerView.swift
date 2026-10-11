@@ -7,7 +7,7 @@ struct DialerView: View {
 
     var body: some View {
         Group {
-            if let call = state.activeCall {
+            if let call = state.activeCall, !state.showingNewCall {
                 ActiveCallView(call: call)
             } else if state.accounts.isEmpty {
                 noAccounts
@@ -44,6 +44,14 @@ struct DialerView: View {
 
     private var idle: some View {
         VStack(spacing: 18) {
+            if let call = state.activeCall {
+                VStack(spacing: 6) {
+                    Button("Return to \(call.displayName)") { state.showingNewCall = false }
+                        .keyboardShortcut(.cancelAction)
+                    Text("Your current call will be held when you place another.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             accountPicker
             numberField
             KeypadView { key in
@@ -59,6 +67,7 @@ struct DialerView: View {
         .padding(.horizontal, 32)
         .padding(.vertical, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onAppear { numberFocused = true }
     }
 
     private var accountPicker: some View {
@@ -91,7 +100,7 @@ struct DialerView: View {
 
     private var numberField: some View {
         HStack(spacing: 8) {
-            TextField("Number or SIP address", text: $state.dialString)
+            TextField(state.dialerAccount?.managed?.mode == .gateway ? "Phone number or extension" : "Number or SIP address", text: $state.dialString)
                 .textFieldStyle(.plain)
                 .font(.system(size: 26, weight: .regular, design: .rounded))
                 .multilineTextAlignment(.center)
@@ -195,30 +204,70 @@ struct ActiveCallView: View {
     @FocusState private var focused: Bool
 
     private var account: SIPAccount? { state.account(for: call.accountID) }
-    private var otherCalls: [CallSnapshot] { state.calls.filter { $0.id != call.id } }
+    private var conferencePeer: CallSnapshot? {
+        guard let group = call.conferenceID else { return nil }
+        return state.calls.first { $0.id != call.id && $0.conferenceID == group }
+    }
+    private var otherCalls: [CallSnapshot] { state.calls.filter { $0.id != call.id && $0.id != conferencePeer?.id } }
+    private var mergeCandidates: [CallSnapshot] {
+        otherCalls.filter { $0.accountID == call.accountID && $0.state == .confirmed && !$0.isTransferring && $0.conferenceID == nil }
+    }
 
     var body: some View {
-        VStack(spacing: 20) {
-            header
-            if call.state == .incoming {
-                incomingButtons
-            } else {
-                if showKeypad {
-                    keypad
+        ScrollView {
+            VStack(spacing: 20) {
+                header
+                if call.state == .incoming {
+                    incomingButtons
+                } else {
+                    if showKeypad {
+                        keypad
+                    }
+                    controls
+                    if let peer = conferencePeer {
+                        ForEach([call, peer]) { member in
+                            HStack {
+                                Text(member.displayName).lineLimit(1)
+                                Spacer()
+                                Button("Remove") { state.engine.hangup(member) }
+                                    .help("End \(member.displayName)'s call and continue with the other person")
+                            }
+                        }
+                        Button("Separate calls") { state.separateConference(call) }
+                            .disabled(state.changingAudio)
+                    } else if call.state == .confirmed && !call.isTransferring && !mergeCandidates.isEmpty {
+                        Menu {
+                            ForEach(mergeCandidates) { other in
+                                Button("Merge with \(other.displayName)") { state.mergeConference(call, with: other) }
+                            }
+                        } label: { Label("Merge calls", systemImage: "person.2.fill") }
+                        .disabled(state.changingAudio)
+                    }
+                    if state.changingAudio { ProgressView("Updating calls…").controlSize(.small) }
+                    HStack(spacing: 12) {
+                        Button {
+                            state.prepareNewCall(from: call.accountID)
+                        } label: {
+                            Label("Add call", systemImage: "phone.badge.plus")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .disabled(call.state != .confirmed || call.isTransferring || state.changingAudio)
+                        hangupButton
+                    }
                 }
-                controls
-                hangupButton
+                if let status = state.transferStatus {
+                    Text(status).font(.caption).foregroundStyle(.secondary)
+                }
+                if !otherCalls.isEmpty {
+                    otherCallsList
+                }
             }
-            if let status = state.transferStatus {
-                Text(status).font(.caption).foregroundStyle(.secondary)
-            }
-            if !otherCalls.isEmpty {
-                otherCallsList
-            }
+            .frame(maxWidth: 420)
+            .padding(32)
+            .frame(maxWidth: .infinity, alignment: .top)
         }
-        .frame(maxWidth: 420)
-        .padding(32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
@@ -242,11 +291,11 @@ struct ActiveCallView: View {
                 .font(.system(size: 28))
                 .foregroundStyle(call.state == .confirmed ? Color.green : Color.accentColor)
                 .padding(.bottom, 4)
-            Text(call.displayName)
+            Text(conferencePeer == nil ? call.displayName : "Conference")
                 .font(.system(size: 30, weight: .medium, design: .rounded))
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
-            if !call.remoteName.isEmpty {
+            if conferencePeer == nil && !call.remoteName.isEmpty {
                 Text(call.remoteNumber).font(.title3).foregroundStyle(.secondary)
             }
             CallStatusText(call: call)
@@ -313,7 +362,7 @@ struct ActiveCallView: View {
             CallControlButton(title: call.isOnHold ? "Resume" : "Hold",
                               systemImage: call.isOnHold ? "play.fill" : "pause.fill",
                               isActive: call.isOnHold,
-                              isEnabled: call.state == .confirmed) {
+                              isEnabled: call.state == .confirmed && !state.changingAudio) {
                 state.toggleHold(callID: call.id)
             }
             CallControlButton(title: "Keypad",
@@ -324,7 +373,7 @@ struct ActiveCallView: View {
             }
             CallControlButton(title: "Transfer",
                               systemImage: "arrow.triangle.branch",
-                              isEnabled: call.state == .confirmed) {
+                              isEnabled: call.state == .confirmed && !call.isTransferring && call.conferenceID == nil && !state.changingAudio) {
                 showTransfer = true
             }
             .popover(isPresented: $showTransfer, arrowEdge: .bottom) { transferPopover }
@@ -341,7 +390,7 @@ struct ActiveCallView: View {
     private var transferPopover: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Transfer call").font(.headline)
-            TextField("Number or SIP address", text: $transferTarget)
+            TextField(account?.managed?.mode == .gateway ? "Phone number or extension" : "Number or SIP address", text: $transferTarget)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 260)
                 .onSubmit { blindTransfer() }
@@ -352,13 +401,13 @@ struct ActiveCallView: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(transferTarget.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            let held = otherCalls.filter { $0.state == .confirmed }
+            let held = otherCalls.filter { $0.state == .confirmed && $0.accountID == call.accountID && !$0.isTransferring }
             if !held.isEmpty {
                 Divider()
                 Text("Or connect to another call").font(.caption).foregroundStyle(.secondary)
                 ForEach(held) { other in
                     Button("Connect with \(other.displayName)") {
-                        state.attendedTransfer(callID: call.id, toCallID: other.id)
+                        state.attendedTransfer(call, to: other)
                         showTransfer = false
                     }
                 }
@@ -370,16 +419,17 @@ struct ActiveCallView: View {
     private func blindTransfer() {
         let target = transferTarget.trimmingCharacters(in: .whitespaces)
         guard !target.isEmpty else { return }
-        state.transfer(callID: call.id, to: target)
+        state.transfer(call, to: target)
         transferTarget = ""
         showTransfer = false
     }
 
     private var hangupButton: some View {
         Button {
-            state.hangup(callID: call.id)
+            if call.conferenceID != nil { state.engine.hangupConference(call) }
+            else { state.hangup(callID: call.id) }
         } label: {
-            Label(call.state == .confirmed ? "Hang Up" : "Cancel", systemImage: "phone.down.fill")
+            Label(call.conferenceID != nil ? "End conference" : call.state == .confirmed ? "Hang Up" : "Cancel", systemImage: "phone.down.fill")
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderedProminent)
@@ -404,7 +454,7 @@ struct ActiveCallView: View {
                         Button("Answer") { state.answer(callID: other.id) }.tint(.green)
                         Button("Decline") { state.decline(callID: other.id) }
                     } else {
-                        Button("Swap") { state.swapToCall(other.id) }
+                        Button("Swap") { state.swapToCall(other.id) }.disabled(state.changingAudio)
                         Button {
                             state.hangup(callID: other.id)
                         } label: {

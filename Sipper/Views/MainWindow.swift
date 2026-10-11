@@ -1,4 +1,5 @@
 import SwiftUI
+import SipperManaged
 
 enum MainSheet: Identifiable, Hashable {
     case addAccount(profileID: UUID?)
@@ -8,6 +9,7 @@ enum MainSheet: Identifiable, Hashable {
     case addContact(number: String?, name: String?)
     case editContact(UUID)
     case importAccounts
+    case managedSetup
 
     var id: String {
         switch self {
@@ -18,6 +20,7 @@ enum MainSheet: Identifiable, Hashable {
         case .addContact: return "addContact"
         case .editContact(let id): return "editContact-\(id)"
         case .importAccounts: return "import"
+        case .managedSetup: return "managed-setup"
         }
     }
 }
@@ -40,7 +43,9 @@ struct MainWindow: View {
                 detail
             }
         }
-        .sheet(item: $sheet) { sheet in
+        .sheet(item: $sheet, onDismiss: {
+            if state.managedSetupURL != nil { state.managedSetupURL = nil; state.managedAccounts.setupLink = "" }
+        }) { sheet in
             sheetView(sheet)
                 .environmentObject(state)
         }
@@ -54,6 +59,9 @@ struct MainWindow: View {
         .onChange(of: state.pendingImport != nil) { _, hasImport in
             if hasImport { sheet = .importAccounts } else if sheet == .importAccounts { sheet = nil }
         }
+        .onChange(of: state.managedSetupURL) { _, url in
+            if let url { state.managedAccounts.setupLink = url.absoluteString; sheet = .managedSetup }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .sipperAddAccount)) { _ in
             sheet = .addAccount(profileID: currentProfileID)
         }
@@ -62,6 +70,7 @@ struct MainWindow: View {
         }
         .onAppear {
             if state.pendingImport != nil { sheet = .importAccounts }
+            if let url = state.managedSetupURL { state.managedAccounts.setupLink = url.absoluteString; sheet = .managedSetup }
         }
     }
 
@@ -81,7 +90,9 @@ struct MainWindow: View {
         case .history:
             HistoryView(sheet: $sheet)
         case .contacts:
-            ContactsView(sheet: $sheet)
+            ContactsView(managed: state.managedAccounts, sheet: $sheet)
+        case .messages:
+            ManagedMessagesPane(managed: state.managedAccounts)
         case .account(let id):
             if state.account(for: id) != nil {
                 AccountDetailView(accountID: id, sheet: $sheet)
@@ -103,17 +114,26 @@ struct MainWindow: View {
         case .addAccount(let profileID):
             AccountFormView(mode: .add(profileID: profileID))
         case .editAccount(let id):
-            AccountFormView(mode: .edit(id))
+            if state.account(for: id)?.managed != nil {
+                ManagedSettingsView(managed: state.managedAccounts).frame(width: 600, height: 500)
+            } else { AccountFormView(mode: .edit(id)) }
         case .addProfile:
             ProfileFormView(mode: .add)
         case .editProfile(let id):
-            ProfileFormView(mode: .edit(id))
+            if state.profile(for: id)?.managedOrganisationID != nil {
+                ManagedSettingsView(managed: state.managedAccounts).frame(width: 600, height: 500)
+            } else { ProfileFormView(mode: .edit(id)) }
         case .addContact(let number, let name):
             ContactFormView(mode: .add(number: number, name: name))
         case .editContact(let id):
             ContactFormView(mode: .edit(id))
         case .importAccounts:
             ImportSheet()
+        case .managedSetup:
+            VStack(alignment: .trailing, spacing: 0) {
+                Button("Done") { self.sheet = nil }.padding()
+                ManagedSettingsView(managed: state.managedAccounts)
+            }.frame(width: 600, height: 600)
         }
     }
 }
@@ -196,6 +216,19 @@ struct BannerIconButton: View {
         .disabled(!isEnabled)
         .help(help)
         .accessibilityLabel(help)
+    }
+}
+
+private struct ManagedMessagesPane: View {
+    @EnvironmentObject private var state: AppState
+    @ObservedObject var managed: ManagedAccountsController
+    var body: some View {
+        if let client = managed.client {
+            let hint = managed.messageNotification
+            ManagedMessagesView(client: client, notification: hint, phoneBusy: state.meetingPhoneBusy,
+                claimMeetingAudio: state.claimMeetingAudio, releaseMeetingAudio: state.releaseMeetingAudio).navigationTitle("Messages")
+                .onDisappear { if let hint { managed.consumeMessageNotification(hint) } }
+        } else { Text("Managed access is unavailable. Open Settings to connect your organisation.").foregroundStyle(.secondary).padding() }
     }
 }
 

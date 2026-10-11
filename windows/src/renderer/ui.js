@@ -5,5 +5,5 @@ import { createContext, useContext } from './lib.js';
 
 export const UIContext = createContext(null);
 
-/** { selection, navigate(target), openDialog(dialog), closeDialog(), dialString, setDialString, focusDialerToken, focusDialer() } */
+/** { selection, navigate(target), openDialog(dialog), closeDialog(), dialString, setDialString, focusDialerToken } */
 export const useUI = () => useContext(UIContext);

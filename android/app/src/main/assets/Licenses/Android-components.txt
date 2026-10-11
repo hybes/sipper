@@ -1,0 +1,40 @@
+Sipper for Android uses the following open-source components:
+
+AndroidX (Compose, Material 3, Activity, Lifecycle, Core-Telecom and supporting
+libraries), Copyright The Android Open Source Project.
+https://android.googlesource.com/platform/frameworks/support/
+
+Kotlin standard library and kotlinx.coroutines, Copyright JetBrains s.r.o.
+https://github.com/JetBrains/kotlin
+https://github.com/Kotlin/kotlinx.coroutines
+
+AppAuth for Android 0.11.1, Copyright The AppAuth for Android Authors.
+https://github.com/openid/AppAuth-Android
+
+The phone notification icon is based on Material Design's phone icon,
+Copyright Google LLC.
+https://github.com/google/material-design-icons
+
+These components are licensed under the Apache License, Version 2.0. The full
+text is included in Apache-2.0.txt. Sipper's own code is licensed as described
+in Sipper.txt. PJSIP, OpenSSL, Opus and the other bundled native components have
+their own accompanying licence files in this directory.
+
+Managed meetings use LiveKit Android 2.29.0 (LiveKit, Inc., Apache-2.0), with
+LiveKit UniFFI Android 0.1.12 (LiveKit, Apache-2.0), and AudioSwitch at commit
+039a35aefab7747c557242fa216c9ea11743b604 (Twilio, Apache-2.0).
+https://github.com/livekit/client-sdk-android/tree/v2.29.0
+https://github.com/livekit/rust-sdks/tree/main/livekit-uniffi
+https://github.com/davidliu/audioswitch/tree/039a35aefab7747c557242fa216c9ea11743b604
+LiveKit and AudioSwitch texts/notices accompany this file. UniFFI's Apache
+licence is included in Apache-2.0.txt.
+
+The prefixed WebRTC Android library 144.7559.14 has its upstream inventory in
+LiveKit-WebRTC-144.7559.14.txt and its wrapper MIT licence in
+LiveKit-WebRTC-wrapper-MIT.txt.
+https://github.com/webrtc-sdk/android/tree/v144.7559.14
+
+Java Native Access 5.19.1 (JNA authors) is used under its Apache-2.0 option;
+LiveKit-JNA.txt retains the upstream dual-licence notice.
+https://github.com/java-native-access/jna/tree/5.19.1
+The complete binary dependency inventory remains part of the release audit.

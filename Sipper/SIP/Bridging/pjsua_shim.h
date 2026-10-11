@@ -18,12 +18,18 @@ const char *sipper_pjsip_version(void);
 /// Fills `buf` with a human readable description of a pj_status_t.
 void sipper_pj_strerror(pj_status_t status, char *buf, size_t size);
 
+/// SIP's nested error macros are not imported by Swift. Both busy statuses are retryable.
+int sipper_registration_is_busy(pj_status_t status);
+
 /// Returns the error status stored in a transport state info, or PJ_SUCCESS.
 pj_status_t sipper_transport_state_status(const pjsip_transport_state_info *info);
 
 /// Whether the given pjsua_call_info describes a call whose audio is active
 /// (PJSUA_CALL_MEDIA_ACTIVE or PJSUA_CALL_MEDIA_REMOTE_HOLD).
 int sipper_call_media_is_active(const pjsua_call_info *info);
+
+/// Copy one canonical gateway call UUID from an INVITE. Reject missing/duplicate/invalid headers.
+int sipper_gateway_call_id(const pjsip_msg *message, char *output, size_t size);
 
 #ifdef __cplusplus
 }

@@ -2,7 +2,7 @@ import XCTest
 @testable import Sipper
 
 /// Exercises AppState against a temporary store, an in-memory password store and an
-/// engine that is never started (so nothing touches pjsua or the network).
+/// engine that stays stopped except for the explicitly enabled loopback call check.
 @MainActor
 final class AppStateTests: XCTestCase {
     private struct Harness {
@@ -40,6 +40,20 @@ final class AppStateTests: XCTestCase {
 
     // MARK: First launch and loading
 
+    func testMeetingAudioClaimBlocksCallingWithoutRequestingTheMicrophone() {
+        let h = makeHarness()
+        var requests = 0
+        h.state.requestMicrophone = { requests += 1; return true }
+        XCTAssertTrue(h.state.claimMeetingAudio())
+        XCTAssertFalse(h.state.claimMeetingAudio())
+        h.state.call("123")
+        XCTAssertEqual(h.state.alert?.title, "Meeting in progress")
+        h.state.answer(callID: 7)
+        XCTAssertEqual(h.state.alert?.message, "Leave your meeting before answering this phone call.")
+        XCTAssertEqual(requests, 0); XCTAssertFalse(h.state.engineIsRunning)
+        h.state.releaseMeetingAudio(); XCTAssertTrue(h.state.claimMeetingAudio())
+        h.state.releaseMeetingAudio()
+    }
     func testFirstLaunchCreatesTheDefaultProfile() {
         let h = makeHarness()
         XCTAssertEqual(h.state.profiles.count, 1)
@@ -349,6 +363,130 @@ final class AppStateTests: XCTestCase {
     }
 
     // MARK: Outcomes
+
+    func testConferenceControlsHoldTheGroupAndPreserveOtherCalls() async throws {
+        guard ProcessInfo.processInfo.environment["SIPPER_TEST_DIRECT_DND"] == "127.0.0.1" else { throw XCTSkip("Requires the isolated direct registrar") }
+        let h = makeHarness(), engine = h.state.engine
+        try engine.useNullAudioForTesting()
+        h.state.settings.sipLogLevel = 0
+        h.state.requestMicrophone = { true }
+        let account = try h.state.addAccount(SIPAccount(profileID: h.state.profiles[0].id,
+            username: "dnd-user", domain: "sipper.test", server: "127.0.0.1", port: 5098), password: "fictional-dnd")
+        h.state.startEngineIfNeeded()
+        defer { engine.stop() }
+        await expectEventually { h.state.registration(for: account.id).isRegistered }
+        func dial() async throws -> CallSnapshot {
+            let before = Set(h.state.calls.map(\.id))
+            h.state.call("*97", from: account.id)
+            await expectEventually { !h.state.changingAudio && h.state.calls.contains { !before.contains($0.id) && $0.state == .confirmed } }
+            return try XCTUnwrap(h.state.calls.first { !before.contains($0.id) })
+        }
+        let first = try await dial(), second = try await dial()
+        h.state.mergeConference(first, with: second)
+        await expectEventually { !h.state.changingAudio && h.state.calls.count == 2 && h.state.calls.allSatisfy { $0.conferenceID != nil && !$0.isOnHold } }
+        XCTAssertEqual(h.state.selectedCallID, first.id)
+        h.state.toggleMute(callID: second.id)
+        await expectEventually { h.state.calls.allSatisfy(\.isMuted) }
+        h.state.toggleHold(callID: first.id)
+        await expectEventually { !h.state.changingAudio && h.state.calls.allSatisfy(\.isOnHold) }
+        h.state.toggleHold(callID: second.id)
+        await expectEventually { !h.state.changingAudio && h.state.calls.allSatisfy { !$0.isOnHold && $0.hasActiveMedia && $0.conferenceID != nil } }
+        let third = try await dial()
+        XCTAssertTrue(h.state.calls.filter { $0.id != third.id }.allSatisfy { $0.isOnHold && $0.conferenceID != nil }, "Calling someone else holds both conference parties")
+        h.state.swapToCall(first.id)
+        await expectEventually { !h.state.changingAudio && h.state.calls.first { $0.id == third.id }?.isOnHold == true && h.state.calls.filter { $0.id != third.id }.allSatisfy { !$0.isOnHold } }
+        let grouped = try XCTUnwrap(h.state.calls.first { $0.id == first.id })
+        h.state.separateConference(grouped)
+        await expectEventually { !h.state.changingAudio && h.state.calls.allSatisfy { $0.conferenceID == nil } && h.state.calls.first { $0.id == first.id }?.isOnHold == false }
+        XCTAssertTrue(h.state.calls.filter { $0.id != first.id }.allSatisfy(\.isOnHold))
+        h.state.mergeConference(first, with: second)
+        await expectEventually { !h.state.changingAudio && h.state.calls.filter { $0.id != third.id }.allSatisfy { $0.conferenceID != nil } }
+        h.state.hangupActiveCall()
+        await expectEventually { h.state.calls.count == 1 }
+        XCTAssertEqual(h.state.calls.first?.id, third.id)
+        XCTAssertTrue(try XCTUnwrap(h.state.calls.first).isOnHold)
+        h.state.hangup(callID: third.id)
+        await expectEventually { h.state.calls.isEmpty }
+        XCTAssertNil(h.state.alert)
+    }
+
+    func testConsultationCallReturnsToControlsAndTransfersBothLegs() async throws {
+        guard ProcessInfo.processInfo.environment["SIPPER_TEST_DIRECT_DND"] == "127.0.0.1" else {
+            throw XCTSkip("Requires the isolated direct registrar in tools/sip-test-server.md")
+        }
+        let h = makeHarness()
+        let engine = h.state.engine
+        try engine.useNullAudioForTesting()
+        h.state.settings.sipLogLevel = 0
+        h.state.requestMicrophone = { true }
+        let account = try h.state.addAccount(SIPAccount(profileID: h.state.profiles[0].id,
+            username: "dnd-user", domain: "sipper.test", server: "127.0.0.1", port: 5098), password: "fictional-dnd")
+        h.state.startEngineIfNeeded()
+        defer { engine.stop() }
+        await expectEventually { h.state.registration(for: account.id).isRegistered }
+        h.state.prepareNewCall("*97", from: account.id)
+        h.state.call(h.state.dialString)
+        await expectEventually { h.state.activeCall != nil }
+        let dialling = try XCTUnwrap(h.state.activeCall)
+        XCTAssertNotEqual(dialling.state, .confirmed)
+        h.state.toggleHold(callID: dialling.id)
+        await expectEventually { h.state.alert?.title == "Could not change hold" }
+        XCTAssertFalse(try XCTUnwrap(engine.activeCalls().first).isOnHold)
+        h.state.alert = nil
+        await expectEventually { h.state.activeCall?.state == .confirmed }
+        let first = try XCTUnwrap(h.state.activeCall)
+        XCTAssertFalse(h.state.showingNewCall)
+        h.state.prepareNewCall("*97")
+        XCTAssertFalse(try XCTUnwrap(h.state.activeCall).isOnHold, "Opening Add call does not interrupt the conversation")
+        h.state.call(h.state.dialString)
+        await expectEventually {
+            h.state.calls.count == 2 && h.state.activeCall?.id != first.id && h.state.activeCall?.state == .confirmed
+                && h.state.calls.first(where: { $0.id == first.id })?.isOnHold == true
+        }
+        let second = try XCTUnwrap(h.state.activeCall)
+        XCTAssertFalse(h.state.showingNewCall, "A placed consultation returns to the active-call controls")
+        XCTAssertEqual(second.accountID, first.accountID)
+        h.state.attendedTransfer(second, to: first)
+        await expectEventually { h.state.calls.isEmpty }
+        XCTAssertNil(h.state.alert)
+        XCTAssertFalse(h.state.showingNewCall)
+        XCTAssertTrue(engine.activeCalls().isEmpty)
+    }
+
+    func testNewCallPreparationAndLinksPreserveTheCurrentCall() async throws {
+        let h = makeHarness()
+        let first = try h.state.addAccount(draft("1001", profileID: h.state.profiles[0].id), password: "pw")
+        let second = try h.state.addAccount(draft("1002", domain: "other.example.com", profileID: h.state.profiles[0].id), password: "pw2")
+        h.state.prepareNewCall("2000")
+        XCTAssertFalse(h.state.showingNewCall, "An idle draft must not hide a subsequent incoming call")
+        let call = CallSnapshot.fixture(accountID: first.id, direction: .outgoing, state: .confirmed)
+        h.state.sipEngine(h.state.engine, callDidChange: call)
+        await expectEventually { h.state.activeCall?.id == call.id }
+        h.state.dialerAccountID = second.id
+        h.state.prepareNewCall()
+        XCTAssertTrue(h.state.showingNewCall)
+        XCTAssertEqual(h.state.selection, .dialer)
+        XCTAssertEqual(h.state.dialerAccountID, first.id, "Consultation starts on the current call's account")
+        XCTAssertEqual(h.state.calls, [call], "Opening the dialler does not hold or change a call")
+        h.state.showingNewCall = false
+        XCTAssertEqual(h.state.activeCall, call, "Cancelling returns to the unchanged call")
+        h.state.prepareNewCall(from: second.id)
+        XCTAssertEqual(h.state.dialerAccountID, second.id)
+        h.state.handle(url: URL(string: "sip:2000@other.example.com")!)
+        XCTAssertTrue(h.state.showingNewCall)
+        XCTAssertEqual(h.state.dialString, "2000@other.example.com")
+        XCTAssertEqual(h.state.dialerAccountID, second.id)
+        XCTAssertEqual(h.state.calls, [call], "Links prefill the visible dialler; they never dial unattended")
+        h.state.call(h.state.dialString)
+        XCTAssertEqual(h.state.alert?.title, "Cannot place call")
+        XCTAssertTrue(h.state.showingNewCall, "A failed call leaves the draft available")
+        h.state.swapToCall(call.id)
+        await expectEventually { !h.state.showingNewCall }
+        h.state.prepareNewCall()
+        h.state.sipEngine(h.state.engine, callDidEnd: call.ended())
+        await expectEventually { h.state.calls.isEmpty }
+        XCTAssertFalse(h.state.showingNewCall)
+    }
 
     func testOutcomeMapping() {
         let h = makeHarness()

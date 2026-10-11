@@ -10,6 +10,7 @@ import { AccountDialog, AccountPage, ProfileDialog, ProfilePage } from './views/
 import { ContactDialog, ContactsPage } from './views/contacts.js';
 import { CallBanner, DialerPage } from './views/dialer.js';
 import { HistoryPage } from './views/history.js';
+import { MessagesPage } from './views/messages.js';
 import { ImportDialog } from './views/importDialog.js';
 import { SettingsPage } from './views/settings.js';
 import { Sidebar } from './views/sidebar.js';
@@ -20,36 +21,35 @@ function App() {
   const [dialog, setDialog] = useState(null);
   const [dialString, setDialString] = useState('');
   const [focusDialerToken, setFocusDialerToken] = useState(0);
+  const [setupLink, setSetupLink] = useState('');
   const stateRef = useRef(state);
   stateRef.current = state;
 
   const ui = useMemo(() => ({
     selection,
+    setupLink, setSetupLink,
     navigate: setSelection,
     openDialog: setDialog,
     closeDialog: () => setDialog(null),
     dialString,
     setDialString,
     focusDialerToken,
-    focusDialer: () => setFocusDialerToken((token) => token + 1),
-  }), [selection, dialString, focusDialerToken]);
+  }), [selection, dialString, focusDialerToken, setupLink]);
 
   useEffect(() => {
-    const newCall = () => {
-      setSelection({ kind: 'dialer' });
-      setFocusDialerToken((token) => token + 1);
-    };
     const unsubscribers = [
       window.sipper.on('navigate', (target) => {
+        if (typeof target.setupLink === 'string') setSetupLink(target.setupLink);
         if (target.kind === 'removed') setSelection((current) => (current.id === target.id ? { kind: 'dialer' } : current));
-        else setSelection(target);
+        else { const { setupLink: _setupLink, ...selection } = target; setSelection(selection); }
       }),
       window.sipper.on('prefillDialer', ({ text }) => {
         setDialString(text);
-        newCall();
+        setSelection({ kind: 'dialer' });
+        setFocusDialerToken((token) => token + 1);
       }),
       window.sipper.on('command', (command) => {
-        if (command === 'newCall') newCall();
+        if (command === 'newCall') act('prepareNewCall');
       }),
       window.sipper.on('ring', ({ ringtone, volume }) => ring(ringtone, volume)),
       window.sipper.on('ringStop', () => stopRinging()),
@@ -82,11 +82,10 @@ function App() {
         handled();
         act('toggleDoNotDisturb');
       } else if (!event.shiftKey && !event.altKey) {
-        const pages = { 1: 'dialer', 2: 'history', 3: 'contacts', ',': 'settings' };
+        const pages = { 1: 'dialer', 2: 'history', 3: 'contacts', 4: 'messages', ',': 'settings' };
         if (key === 'n') {
           handled();
-          setSelection({ kind: 'dialer' });
-          setFocusDialerToken((token) => token + 1);
+          act('prepareNewCall');
         } else if (pages[key]) {
           handled();
           setSelection({ kind: pages[key] });
@@ -106,6 +105,7 @@ function App() {
   switch (selection.kind) {
     case 'history': page = html`<${HistoryPage} />`; break;
     case 'contacts': page = html`<${ContactsPage} />`; break;
+    case 'messages': page = html`<${MessagesPage} />`; break;
     case 'settings': page = html`<${SettingsPage} />`; break;
     case 'account':
       page = accountByID(state, selection.id) ? html`<${AccountPage} key=${selection.id} id=${selection.id} />` : html`<${DialerPage} />`;

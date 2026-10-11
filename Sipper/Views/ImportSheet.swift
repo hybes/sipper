@@ -54,7 +54,7 @@ struct ImportSheet: View {
                 HStack {
                     Text("Profile")
                     Picker("Profile", selection: $profileChoice) {
-                        ForEach(state.profiles) { profile in
+                        ForEach(state.manualProfiles) { profile in
                             Text(profile.name).tag(ProfileChoice.existing(profile.id))
                         }
                         Text("New profile").tag(ProfileChoice.new)
@@ -161,12 +161,12 @@ struct ImportSheet: View {
         loaded = true
         selected = Set(request.candidates.filter { $0.isValid && !$0.isUpdate }.map(\.id))
         if let name = request.profileName,
-           let existing = state.profiles.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+           let existing = state.manualProfiles.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
             profileChoice = .existing(existing.id)
         } else if let name = request.profileName {
             profileChoice = .new
             newProfileName = name
-        } else if let first = state.profiles.first {
+        } else if let first = state.manualProfiles.first {
             profileChoice = .existing(first.id)
         }
     }

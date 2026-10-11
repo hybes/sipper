@@ -38,7 +38,10 @@
       {
         "from": "engine/build",
         "to": "engine",
-        "filter": ["sipper-engine.exe", "sipper-browser-host.exe"]
+        "filter": [
+          "sipper-engine.exe",
+          "sipper-browser-host.exe"
+        ]
       },
       {
         "from": "build/licences",
@@ -46,7 +49,14 @@
       }
     ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "resources/icon.png",
       "executableName": "Sipper"
     },
@@ -69,6 +79,9 @@
     "preact": "10.29.8"
   },
   "dependencies": {
-    "htm": "3.1.1"
+    "htm": "3.1.1",
+    "livekit-client": "2.22.3",
+    "openid-client": "6.8.8",
+    "zod": "4.6.5"
   }
 }

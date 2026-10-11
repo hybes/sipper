@@ -1,0 +1,10 @@
+# Allow only the controller sources and locked dependency manifests.
+**
+!package.json
+!package-lock.json
+!src/**
+**/.env*
+**/*.key
+**/*.pem
+**/*.p8
+**/.DS_Store

@@ -61,6 +61,14 @@ if (-not (Test-Path $pj)) {
 }
 
 $opusSource = Join-Path $Work "opus-$OpusVersion"
+$digestPatch = (Resolve-Path (Join-Path $PSScriptRoot 'pjsip-schannel-sha256.patch')).Path
+& git -C $pj apply --check --quiet $digestPatch
+if ($LASTEXITCODE -eq 0) {
+  Invoke-Checked 'git' @('-C', $pj, 'apply', $digestPatch)
+} else {
+  & git -C $pj apply --reverse --check --quiet $digestPatch
+  if ($LASTEXITCODE -ne 0) { throw 'Cached PJSIP does not match the Schannel digest patch. Re-extract the pinned source.' }
+}
 $opus = Join-Path $Work 'opus'
 if (-not (Test-Path $opusSource)) {
   $tarball = Join-Path $Work "opus-$OpusVersion.tar.gz"
@@ -138,6 +146,7 @@ Copy-Item (Join-Path $opusSource 'COPYING') (Join-Path $licences 'Opus.txt')
 Set-Content -Path (Join-Path $prefix 'BUILD-INFO.txt') -Value @"
 pjproject $PjsipVersion for x64, MSVC $env:VCToolsVersion, Release-Static (/MT)
 opus: $OpusVersion
+Schannel SHA-256 patch: $((Get-FileHash -Algorithm SHA256 $digestPatch).Hash.ToLowerInvariant())
 
 --- config_site.h ---
 $configSite

@@ -6,8 +6,7 @@ struct SipperCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Call") {
-                state.selection = .dialer
-                NotificationCenter.default.post(name: .sipperFocusDialer, object: nil)
+                state.prepareNewCall()
             }
             .keyboardShortcut("n", modifiers: [.command])
 
@@ -71,6 +70,7 @@ struct SipperCommands: Commands {
             Button("Dialer") { state.selection = .dialer }.keyboardShortcut("1", modifiers: [.command])
             Button("History") { state.selection = .history }.keyboardShortcut("2", modifiers: [.command])
             Button("Contacts") { state.selection = .contacts }.keyboardShortcut("3", modifiers: [.command])
+            Button("Messages") { state.selection = .messages }.keyboardShortcut("4", modifiers: [.command])
             Divider()
         }
     }

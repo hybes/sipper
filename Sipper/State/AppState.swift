@@ -1,11 +1,13 @@
 import Foundation
 import Combine
 import AppKit
+import SipperManaged
 
 enum SidebarItem: Hashable {
     case dialer
     case history
     case contacts
+    case messages
     case account(UUID)
     case profile(UUID)
 }
@@ -36,8 +38,10 @@ final class AppState: ObservableObject {
     @Published var selectedCallID: Int?
     @Published var selection: SidebarItem? = .dialer
     @Published var dialString = ""
+    @Published var showingNewCall = false
     @Published var dialerAccountID: UUID?
     @Published var pendingImport: ImportRequest?
+    @Published var managedSetupURL: URL?
     @Published var alert: AppAlert?
     @Published private(set) var audioDevices: [AudioDevice] = []
     @Published private(set) var codecs: [CodecInfo] = []
@@ -54,6 +58,27 @@ final class AppState: ObservableObject {
     let ringer = Ringer()
     let notifications = NotificationManager()
     let cloudSync = CloudSyncService()
+    let managedAccounts = ManagedAccountsController()
+    private var managedPasswords: [UUID: String] = [:]
+    private var managedAccountIDs = Set<UUID>()
+    private var managedCallControl: ManagedCallControl?
+    private var incomingTasks: [Int: (call: CallSnapshot, task: Task<Void, Never>)] = [:]
+    @Published private(set) var changingAudio = false
+    @Published private(set) var meetingAudioClaimed = false
+    var meetingPhoneBusy: Bool { changingAudio || !calls.isEmpty }
+    func claimMeetingAudio() -> Bool {
+        guard !meetingAudioClaimed, !meetingPhoneBusy, engine.activeCalls().isEmpty else { return false }
+        meetingAudioClaimed = true
+        return true
+    }
+    func releaseMeetingAudio() { meetingAudioClaimed = false }
+    private var answerTasks: [Int: (call: CallSnapshot, task: Task<Void, Never>)] = [:]
+    private var verifiedManagedCalls: [Int: CallSnapshot] = [:]
+    var requestMicrophone: () async -> Bool = {
+        await withCheckedContinuation { continuation in
+            MicrophoneAccess.request { continuation.resume(returning: $0) }
+        }
+    }
 
     private var tombstones: [SyncCollection: [SyncTombstone]] = [:]
     private let cloudEncoder: JSONEncoder = {
@@ -77,6 +102,9 @@ final class AppState: ObservableObject {
     private var recordingURLs: [Int: [URL]] = [:]
     private var saveWork: [String: DispatchWorkItem] = [:]
     private var incomingPanel: IncomingCallPanelController?
+    private var networkAvailable = true
+    private var receivedNetworkPath = false
+    private var networkRecovery: Task<Void, Never>?
 
     init(store: PersistenceStore = PersistenceStore(),
          passwords: PasswordStore = KeychainPasswordStore(),
@@ -149,13 +177,13 @@ final class AppState: ObservableObject {
     }
 
     private func persistProfiles(push: Bool = true) {
-        let value = profiles
+        let value = manualProfiles
         scheduleSave(StoreFile.profiles) { [store] in try? store.save(value, to: StoreFile.profiles) }
         if push { pushCloud(.profiles) }
     }
 
     private func persistAccounts(push: Bool = true) {
-        let value = accounts
+        let value = accounts.filter { $0.managed == nil }
         scheduleSave(StoreFile.accounts) { [store] in try? store.save(value, to: StoreFile.accounts) }
         if push { pushCloud(.accounts) }
     }
@@ -192,8 +220,8 @@ final class AppState: ObservableObject {
     func flush() {
         for (_, work) in saveWork { work.cancel() }
         saveWork.removeAll()
-        try? store.save(profiles, to: StoreFile.profiles)
-        try? store.save(accounts, to: StoreFile.accounts)
+        try? store.save(manualProfiles, to: StoreFile.profiles)
+        try? store.save(accounts.filter { $0.managed == nil }, to: StoreFile.accounts)
         try? store.save(history, to: StoreFile.history)
         try? store.save(contacts, to: StoreFile.contacts)
         try? store.save(settings, to: StoreFile.settings)
@@ -206,6 +234,7 @@ final class AppState: ObservableObject {
         guard !engine.isRunning else { return }
         do {
             try engine.start(settings: settings)
+            if !networkAvailable { engine.networkChanged(available: false) }
             engineIsRunning = true
             engineError = nil
             refreshAudioDevices()
@@ -223,6 +252,7 @@ final class AppState: ObservableObject {
     func restartEngine() {
         do {
             try engine.restart(settings: settings)
+            if !networkAvailable { engine.networkChanged(available: false) }
             engineIsRunning = true
             engineError = nil
             refreshAudioDevices()
@@ -236,6 +266,12 @@ final class AppState: ObservableObject {
     }
 
     func shutdown() {
+        networkRecovery?.cancel()
+        networkRecovery = nil
+        managedAccounts.stop()
+        for entry in incomingTasks.values { entry.task.cancel() }
+        for entry in answerTasks.values { entry.task.cancel() }
+        incomingTasks.removeAll(); answerTasks.removeAll(); verifiedManagedCalls.removeAll()
         ringer.stop()
         incomingPanel?.close()
         engine.stop()
@@ -244,18 +280,30 @@ final class AppState: ObservableObject {
 
     /// Accounts that should be live in pjsua: enabled and in an enabled profile.
     private var activeAccounts: [SIPAccount] {
-        accounts.filter { account in
-            account.isEnabled && (profiles.first { $0.id == account.profileID }?.isEnabled ?? false)
-        }
+        accounts.filter { canUseAccount($0) }
+    }
+
+    func canUseAccount(_ account: SIPAccount, now: Date = Date()) -> Bool {
+        account.isEnabled && (profile(for: account.profileID)?.isEnabled ?? false)
+            && (account.managed.map { $0.expiresAt > now } ?? true)
     }
 
     private var accountSyncGeneration = 0
 
     /// Reads passwords off the main thread (a Keychain prompt can block the call for
     /// as long as the user takes) and then hands the active set to the engine.
-    private func syncEngineAccounts() {
-        guard engineIsRunning else { return }
+    private func syncEngineAccounts(completion: ((Bool) -> Void)? = nil) {
+        // Withdrawal may arrive while caller lookup, microphone permission or an answer
+        // reservation is pending. Established calls retain their existing conversation.
+        for entry in Array(incomingTasks.values) + Array(answerTasks.values) {
+            if account(for: entry.call.accountID).map({ canUseAccount($0) }) != true {
+                entry.task.cancel()
+                engine.hangup(entry.call, code: 480, onlyIfRinging: true)
+            }
+        }
+        guard engineIsRunning else { completion?(false); return }
         let active = activeAccounts
+        engine.retainManagedAccounts(Set(active.filter { $0.managed != nil }.map(\.id)))
         for account in active where registrations[account.id] == nil {
             registrations[account.id] = .registering
         }
@@ -265,10 +313,14 @@ final class AppState: ObservableObject {
         accountSyncGeneration += 1
         let generation = accountSyncGeneration
         let passwords = self.passwords
+        let managedPasswords = self.managedPasswords
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let lookups = active.map { ($0, passwords.lookup(for: $0.id)) }
+            let lookups = active.map { account in
+                (account, account.managed == nil ? passwords.lookup(for: account.id)
+                    : managedPasswords[account.id].map(PasswordLookup.found) ?? .missing)
+            }
             Task { @MainActor [weak self] in
-                guard let self, generation == self.accountSyncGeneration else { return }
+                guard let self, generation == self.accountSyncGeneration else { completion?(false); return }
                 var entries: [(account: SIPAccount, password: String)] = []
                 for (account, lookup) in lookups {
                     switch lookup {
@@ -282,12 +334,14 @@ final class AppState: ObservableObject {
                     }
                 }
                 self.engine.syncAccounts(entries)
+                completion?(true)
             }
         }
     }
 
     private func settingsDidChange(from old: AppSettings) {
         persistSettings()
+        if old.messageNotifications != settings.messageNotifications { managedAccounts.messageNotificationsChanged() }
         guard engineIsRunning else { return }
         let networkChanged = old.localUDPPort != settings.localUDPPort
             || old.localTCPPort != settings.localTCPPort
@@ -334,7 +388,7 @@ final class AppState: ObservableObject {
     /// Re-saves every password so the items match the current iCloud Keychain setting.
     private func migratePasswordsToCurrentKeychainMode() {
         var failures: [String] = []
-        for account in accounts {
+        for account in accounts where account.managed == nil {
             if case .found(let password) = passwords.lookup(for: account.id) {
                 do { try passwords.setPassword(password, for: account.id) } catch { failures.append("\(account.displayLabel): \(error.localizedDescription)") }
             }
@@ -367,6 +421,86 @@ final class AppState: ObservableObject {
 
     // MARK: Profiles
 
+    var manualProfiles: [Profile] { profiles.filter { $0.managedOrganisationID == nil } }
+
+    func configureManagedCalls(client: ManagedClient) {
+        managedCallControl = ManagedCallControl(engine: engine, client: client)
+    }
+
+    /// The configuration stays in memory; its encrypted cache belongs to the managed SDK.
+    func applyManagedConfiguration(_ configuration: ManagedConfiguration, profileID: UUID,
+                                   afterSync: (([(account: SIPAccount, password: String)], Bool) -> Void)? = nil) throws {
+        try configuration.validate(organisationID: configuration.organisation.id, deviceID: configuration.deviceId)
+        if let existing = profile(for: profileID), existing.managedOrganisationID != configuration.organisation.id {
+            throw ManagedError.invalidConfiguration
+        }
+        let mapped = configuration.accounts.map { ManagedAccountMapper.account($0, configuration: configuration, profileID: profileID) }
+        for account in mapped {
+            if let existing = self.account(for: account.id), existing.managed?.deviceID != configuration.deviceId {
+                throw ManagedError.invalidConfiguration
+            }
+        }
+        let previous = Dictionary(uniqueKeysWithValues: accounts.filter { $0.managed?.deviceID == configuration.deviceId }.map { ($0.id, $0) })
+        var profile = profile(for: profileID) ?? Profile(id: profileID, name: configuration.organisation.name, colorName: .teal, iconName: "building.2.crop.circle", sortOrder: profiles.count)
+        profile.name = configuration.organisation.name
+        profile.managedOrganisationID = configuration.organisation.id
+        profiles.removeAll { $0.id == profileID }; profiles.append(profile)
+        let wanted = Set(mapped.map(\.id))
+        for id in previous.keys where !wanted.contains(id) { managedPasswords[id] = nil; registrations[id] = nil; voicemail[id] = nil }
+        accounts.removeAll { $0.managed?.deviceID == configuration.deviceId }
+        var expected: [(account: SIPAccount, password: String)] = []
+        for (index, var account) in mapped.enumerated() {
+            account.sortOrder = index
+            account.isEnabled = previous[account.id]?.isEnabled ?? true
+            accounts.append(account)
+            managedAccountIDs.insert(account.id)
+            managedPasswords[account.id] = configuration.accounts[index].password
+            expected.append((account, configuration.accounts[index].password))
+        }
+        if dialerAccountID == nil { dialerAccountID = activeAccounts.first?.id }
+        syncEngineAccounts { ready in afterSync?(expected, ready) }
+    }
+
+    /// Password lookup and engine reconciliation must finish before reporting an applied revision.
+    func applyManagedConfigurationAndReport(_ configuration: ManagedConfiguration, profileID: UUID) async throws -> ManagedDeviceReport {
+        try await withCheckedThrowingContinuation { continuation in
+            do {
+                try applyManagedConfiguration(configuration, profileID: profileID) { expected, ready in
+                    continuation.resume(returning: ManagedAccountMapper.deviceReport(configuration, expected: expected, engine: self.engine, ready: ready))
+                }
+            } catch { continuation.resume(throwing: error) }
+        }
+    }
+
+    /// Observe the already applied settings without reapplying accounts or fetching provisioning.
+    func managedDeviceReport(_ configuration: ManagedConfiguration, profileID: UUID) -> ManagedDeviceReport {
+        let expected = configuration.accounts.enumerated().map { index, value in
+            var account = ManagedAccountMapper.account(value, configuration: configuration, profileID: profileID)
+            account.sortOrder = index; account.isEnabled = self.account(for: account.id)?.isEnabled ?? true
+            return (account: account, password: value.password)
+        }
+        return ManagedAccountMapper.deviceReport(configuration, expected: expected, engine: engine)
+    }
+
+    func removeManagedAccounts(deviceID: UUID, profileID: UUID? = nil) {
+        let removed = accounts.filter { $0.managed?.deviceID == deviceID }
+        for account in removed { managedPasswords[account.id] = nil; registrations[account.id] = nil; voicemail[account.id] = nil }
+        accounts.removeAll { $0.managed?.deviceID == deviceID }
+        let profileIDs = Set(removed.map(\.profileID) + (profileID.map { [$0] } ?? []))
+        let usedProfiles = Set(accounts.map(\.profileID))
+        profiles.removeAll { profileIDs.contains($0.id) && $0.managedOrganisationID != nil && !usedProfiles.contains($0.id) }
+        if let id = dialerAccountID, removed.contains(where: { $0.id == id }) { dialerAccountID = activeAccounts.first?.id }
+        syncEngineAccounts()
+    }
+
+    func expireManagedAccounts(now: Date = Date()) {
+        let expired = accounts.filter { $0.managed.map({ $0.expiresAt <= now }) == true && managedPasswords[$0.id] != nil }
+        guard !expired.isEmpty else { return }
+        for account in expired { managedPasswords[account.id] = nil }
+        syncEngineAccounts()
+        for account in expired { registrations[account.id] = .failed(code: 0, reason: "Managed settings expired. Connect to refresh them.") }
+    }
+
     var sortedProfiles: [Profile] { profiles }
 
     func profile(for id: UUID) -> Profile? { profiles.first { $0.id == id } }
@@ -387,6 +521,7 @@ final class AppState: ObservableObject {
 
     func updateProfile(_ profile: Profile) {
         guard let index = profiles.firstIndex(where: { $0.id == profile.id }) else { return }
+        guard profiles[index].managedOrganisationID == nil else { return }
         let wasEnabled = profiles[index].isEnabled
         var updated = profile
         updated.updatedAt = Date.stamp()
@@ -397,13 +532,20 @@ final class AppState: ObservableObject {
 
     func setProfileEnabled(_ id: UUID, enabled: Bool) {
         guard var profile = profile(for: id) else { return }
+        if profile.managedOrganisationID != nil {
+            profiles[profiles.firstIndex(where: { $0.id == id })!].isEnabled = enabled
+            syncEngineAccounts()
+            return
+        }
         profile.isEnabled = enabled
         updateProfile(profile)
     }
 
     /// Deletes a profile. Accounts move to `destination` or are deleted when nil.
     func deleteProfile(_ id: UUID, moveAccountsTo destination: UUID?) {
-        guard profiles.count > 1, let index = profiles.firstIndex(where: { $0.id == id }) else { return }
+        guard manualProfiles.count > 1, let index = profiles.firstIndex(where: { $0.id == id }) else { return }
+        guard profiles[index].managedOrganisationID == nil,
+              destination.map({ profile(for: $0)?.managedOrganisationID == nil }) ?? true else { return }
         let members = accounts(in: id)
         if let destination, profiles.contains(where: { $0.id == destination }) {
             for member in members {
@@ -434,18 +576,31 @@ final class AppState: ObservableObject {
 
     func account(for id: UUID) -> SIPAccount? { accounts.first { $0.id == id } }
 
-    func registration(for id: UUID) -> RegistrationState { registrations[id] ?? .unregistered }
+    func registration(for id: UUID) -> RegistrationState {
+        if account(for: id)?.managed.map({ $0.expiresAt <= Date() }) == true {
+            return .failed(code: 0, reason: "Managed settings expired. Connect to refresh them.")
+        }
+        if !networkAvailable, let account = account(for: id), canUseAccount(account) {
+            return .failed(code: 0, reason: "No network connection")
+        }
+        return registrations[id] ?? .unregistered
+    }
 
-    func password(for accountID: UUID) -> String { passwords.password(for: accountID) ?? "" }
+    func password(for accountID: UUID) -> String {
+        guard account(for: accountID)?.managed == nil else { return "" }
+        return passwords.password(for: accountID) ?? ""
+    }
 
-    var registeredAccounts: [SIPAccount] { accounts.filter { registration(for: $0.id).isRegistered } }
+    var registeredAccounts: [SIPAccount] { activeAccounts.filter { registration(for: $0.id).isRegistered } }
 
     func duplicateAccount(username: String, domain: String, excluding: UUID? = nil) -> SIPAccount? {
-        accounts.first { $0.id != excluding && $0.matches(username: username, domain: domain) }
+        accounts.first { $0.managed == nil && $0.id != excluding && $0.matches(username: username, domain: domain) }
     }
 
     @discardableResult
     func addAccount(_ draft: SIPAccount, password: String) throws -> SIPAccount {
+        guard draft.managed == nil, account(for: draft.id) == nil,
+              profile(for: draft.profileID)?.managedOrganisationID == nil else { throw ManagedError.invalidConfiguration }
         var account = draft
         if !profiles.contains(where: { $0.id == account.profileID }) {
             account.profileID = profiles[0].id
@@ -460,6 +615,8 @@ final class AppState: ObservableObject {
     }
 
     func updateAccount(_ account: SIPAccount, password: String?) throws {
+        guard account.managed == nil, self.account(for: account.id)?.managed == nil,
+              profile(for: account.profileID)?.managedOrganisationID == nil else { throw ManagedError.accessUnavailable("Your administrator manages these settings.") }
         if let password {
             try passwords.setPassword(password, for: account.id)
         }
@@ -483,6 +640,7 @@ final class AppState: ObservableObject {
     }
 
     func deleteAccount(_ id: UUID) {
+        guard account(for: id)?.managed == nil else { return }
         accounts.removeAll { $0.id == id }
         addTombstone(.accounts, id)
         passwords.removePassword(for: id)
@@ -509,6 +667,7 @@ final class AppState: ObservableObject {
 
     func moveAccount(_ id: UUID, to profileID: UUID) {
         guard var account = account(for: id), profiles.contains(where: { $0.id == profileID }) else { return }
+        guard account.managed == nil, profile(for: profileID)?.managedOrganisationID == nil else { return }
         account.profileID = profileID
         account.sortOrder = (accounts(in: profileID).map(\.sortOrder).max() ?? -1) + 1
         replaceAccount(account)
@@ -516,13 +675,45 @@ final class AppState: ObservableObject {
     }
 
     func reRegister(_ id: UUID) {
+        guard activeAccounts.contains(where: { $0.id == id }) else { return }
+        guard networkAvailable else {
+            registrations[id] = .failed(code: 0, reason: "No network connection")
+            return
+        }
         registrations[id] = .registering
         engine.setRegistration(accountID: id, enabled: true)
     }
 
     func reRegisterAll() {
-        for account in activeAccounts { registrations[account.id] = .registering }
-        engine.reRegisterAll()
+        for account in activeAccounts { reRegister(account.id) }
+    }
+
+    func networkPathChanged(available: Bool) {
+        if !receivedNetworkPath {
+            receivedNetworkPath = true
+            // The first connected path describes startup, not a route change.
+            // PJSIP recovery would cancel any outgoing call still connecting.
+            if available && networkAvailable { return }
+        }
+        networkChanged(available: available)
+    }
+
+    func networkChanged(available: Bool) {
+        networkAvailable = available
+        networkRecovery?.cancel()
+        guard engine.isRunning else { return }
+        if !available {
+            for account in activeAccounts { registrations[account.id] = .failed(code: 0, reason: "No network connection") }
+            engine.networkChanged(available: false)
+            return
+        }
+        // Coalesce route changes and wake notifications without restarting the engine.
+        networkRecovery = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+            guard let self else { return }
+            self.engine.networkChanged(available: true)
+            await self.managedAccounts.refresh()
+        }
     }
 
     // MARK: Calls
@@ -534,13 +725,34 @@ final class AppState: ObservableObject {
 
     var hasActiveCalls: Bool { !calls.isEmpty }
 
+    func prepareNewCall(_ target: String = "", from accountID: UUID? = nil) {
+        dialString = target
+        dialerAccountID = accountID ?? activeCall?.accountID ?? dialerAccount?.id
+        showingNewCall = hasActiveCalls
+        selection = .dialer
+        NotificationCenter.default.post(name: .sipperFocusDialer, object: nil)
+    }
+
     /// The account the dialer should use.
     var dialerAccount: SIPAccount? {
         if let dialerAccountID, let account = account(for: dialerAccountID) { return account }
         return registeredAccounts.first ?? accounts.first
     }
 
+    func callDirectory(_ number: String, contactID: UUID, enrollment: ManagedEnrollment, accountID: UUID) throws {
+        guard let client = managedAccounts.client, let account = account(for: accountID), canUseAccount(account),
+              ManagedAccountMapper.directoryAccount(account)?.belongs(to: enrollment) == true else {
+            throw ManagedError.accessUnavailable("This customer’s calling account is unavailable.")
+        }
+        let verified = try client.directoryNumber(number, contactID: contactID, for: enrollment)
+        call(verified, from: account.id)
+    }
+
     func call(_ target: String, from accountID: UUID? = nil) {
+        guard !meetingAudioClaimed else {
+            alert = AppAlert(title: "Meeting in progress", message: "Leave your meeting before making a phone call.")
+            return
+        }
         let trimmed = target.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         guard engineIsRunning else {
@@ -551,29 +763,39 @@ final class AppState: ObservableObject {
             alert = AppAlert(title: "No account", message: "Add a SIP account before placing a call.")
             return
         }
+        guard canUseAccount(account) else {
+            alert = AppAlert(title: "Account unavailable", message: account.managed == nil ? "Enable this account and its profile before calling." : "Enable this account and refresh its managed settings before calling.")
+            return
+        }
         guard registration(for: account.id).isRegistered || !account.usesSeparateServer else {
             alert = AppAlert(title: "Account not registered",
                              message: "\(account.displayLabel) is not registered: \(registration(for: account.id).detail)")
             return
         }
 
-        let uri = account.callURI(for: trimmed)
-        MicrophoneAccess.request { [weak self] granted in
-            guard let self else { return }
+        Task { [weak self] in
+            guard let self, !self.changingAudio, !self.meetingAudioClaimed else { return }
+            self.changingAudio = true
+            defer { self.changingAudio = false }
+            let granted = await self.requestMicrophone()
+            guard let current = self.account(for: account.id), self.canUseAccount(current) else { return }
             if !granted {
                 self.alert = AppAlert(title: "Microphone access needed",
                                       message: "Allow Sipper to use the microphone in System Settings › Privacy & Security › Microphone.")
+                return
             }
             do {
+                guard self.calls.allSatisfy({ $0.state == .incoming || ($0.state == .confirmed && !$0.isTransferring) }) else { throw SIPEngineError.holdUpdating }
                 // Put other calls on hold before dialling.
-                for other in self.calls where other.state == .confirmed && !other.isOnHold {
-                    self.engine.setHold(callID: other.id, onHold: true)
-                }
-                var snapshot = try self.engine.makeCall(accountID: account.id, uri: uri)
+                try await self.holdCalls()
+                try Task.checkCancellation()
+                guard let current = self.account(for: account.id), self.canUseAccount(current) else { throw SIPEngineError.unknownAccount }
+                var snapshot = try self.engine.makeCall(accountID: account.id, uri: current.callURI(for: trimmed))
                 let contact = self.contact(forNumber: snapshot.remoteNumber)
                 if snapshot.remoteName.isEmpty, let contact { snapshot.remoteName = contact.name }
                 self.upsert(snapshot)
                 self.selectedCallID = snapshot.id
+                self.showingNewCall = false
                 self.settings.lastUsedAccountID = account.id
                 self.dialerAccountID = account.id
                 self.dialString = ""
@@ -593,44 +815,145 @@ final class AppState: ObservableObject {
 
     func callBack(_ record: CallRecord) {
         let accountID = accounts.contains(where: { $0.id == record.accountID }) ? record.accountID : nil
-        let target = record.remoteURI.isEmpty ? record.remoteNumber : record.remoteNumber
-        call(target, from: accountID)
+        guard !record.isManaged || accountID != nil else {
+            alert = AppAlert(title: "Account unavailable", message: "Reconnect the managed account used for this call before calling back.")
+            return
+        }
+        call(record.remoteNumber, from: accountID)
+    }
+
+    private func receiveIncoming(_ call: CallSnapshot) {
+        guard let account = account(for: call.accountID), canUseAccount(account) else {
+            engine.hangup(call, code: 480, onlyIfRinging: true)
+            return
+        }
+        guard call.gatewayCallID != nil else { presentVerifiedIncoming(call); return }
+        guard let control = managedCallControl else {
+            engine.hangup(call, code: 480, onlyIfRinging: true)
+            return
+        }
+        if incomingTasks[call.id]?.call.startedAt == call.startedAt { return }
+        incomingTasks[call.id]?.task.cancel()
+        let task = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.incomingTasks[call.id]?.call.startedAt == call.startedAt { self.incomingTasks[call.id] = nil } }
+            do {
+                let verified = try await control.prepare(call)
+                try Task.checkCancellation()
+                guard let current = self.account(for: call.accountID), self.canUseAccount(current) else { throw ManagedError.callUnavailable }
+                self.verifiedManagedCalls[call.id] = verified
+                self.presentVerifiedIncoming(verified)
+                await control.monitor(verified)
+            } catch { self.engine.hangup(call, code: 480, onlyIfRinging: true) }
+        }
+        incomingTasks[call.id] = (call, task)
+    }
+
+    private func presentVerifiedIncoming(_ incoming: CallSnapshot) {
+        var call = incoming
+        if let contact = contact(forNumber: call.remoteNumber), call.remoteName.isEmpty { call.remoteName = contact.name }
+        if settings.doNotDisturb {
+            upsert(call)
+            decline(callID: call.id)
+            return
+        }
+        upsert(call)
+        beginRecord(for: call)
+        if selectedCallID == nil { selectedCallID = call.id }
+        presentIncomingCall(call)
+        let delay = settings.autoAnswerSeconds
+        if delay > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(delay)) { [weak self] in
+                guard let self, self.calls.contains(where: { $0.id == call.id && $0.startedAt == call.startedAt && $0.state == .incoming }) else { return }
+                self.answer(callID: call.id)
+            }
+        }
+    }
+
+    private func verifiedCaller(_ snapshot: CallSnapshot) -> CallSnapshot? {
+        guard snapshot.gatewayCallID != nil else { return snapshot }
+        guard let verified = verifiedManagedCalls[snapshot.id], verified.startedAt == snapshot.startedAt,
+              verified.accountID == snapshot.accountID, verified.gatewayCallID == snapshot.gatewayCallID else { return nil }
+        // A native status update may have been queued before the authenticated
+        // lookup finished. Keep its state, but never restore its placeholder caller.
+        var call = snapshot
+        call.remoteName = verified.remoteName
+        call.remoteNumber = verified.remoteNumber
+        call.remoteURI = verified.remoteURI
+        return call
     }
 
     func answer(callID: Int) {
-        guard calls.contains(where: { $0.id == callID && $0.state == .incoming }) else { return }
-        ringer.stop()
-        incomingPanel?.dismiss(callID: callID)
-        for other in calls where other.id != callID && other.state == .confirmed && !other.isOnHold {
-            engine.setHold(callID: other.id, onHold: true)
+        guard !meetingAudioClaimed else {
+            alert = AppAlert(title: "Meeting in progress", message: "Leave your meeting before answering this phone call.")
+            return
         }
-        MicrophoneAccess.request { [weak self] _ in
+        guard let call = calls.first(where: { $0.id == callID && $0.state == .incoming }),
+              let account = account(for: call.accountID), canUseAccount(account), answerTasks[callID] == nil else { return }
+        let task = Task { [weak self] in
             guard let self else { return }
-            self.engine.answer(callID: callID, code: 200)
-            if self.settings.muteMicrophoneOnAnswer {
-                self.engine.setMuted(callID: callID, muted: true)
+            defer { if self.answerTasks[callID]?.call.startedAt == call.startedAt { self.answerTasks[callID] = nil } }
+            guard !self.changingAudio, !self.meetingAudioClaimed else { return }
+            self.changingAudio = true
+            defer { self.changingAudio = false }
+            do {
+                guard self.calls.allSatisfy({ $0.id == callID || $0.state == .incoming || ($0.state == .confirmed && !$0.isTransferring) }) else { throw SIPEngineError.holdUpdating }
+                let granted = await self.requestMicrophone()
+                try Task.checkCancellation()
+                guard granted else {
+                    throw NSError(domain: "Sipper", code: 1, userInfo: [NSLocalizedDescriptionKey: "Allow Sipper to use the microphone in System Settings › Privacy & Security › Microphone."])
+                }
+                var claim: UUID?
+                if call.gatewayCallID != nil {
+                    guard let control = self.managedCallControl else { throw ManagedError.callUnavailable }
+                    claim = try await control.claim(call)
+                }
+                try Task.checkCancellation()
+                guard let current = self.account(for: call.accountID), self.canUseAccount(current),
+                      self.calls.contains(where: { $0.id == call.id && $0.startedAt == call.startedAt && $0.state == .incoming }) else { throw ManagedError.callUnavailable }
+                try await self.holdCalls(except: call)
+                try Task.checkCancellation()
+                try self.engine.answer(call, claimedGatewayCallID: claim)
+                self.ringer.stop()
+                self.incomingPanel?.dismiss(callID: callID)
+                if self.settings.muteMicrophoneOnAnswer { self.engine.setMuted(callID: callID, muted: true) }
+                self.selectedCallID = callID
+                self.showingNewCall = false
+                self.selection = .dialer
+                NSApp.activate(ignoringOtherApps: true)
+            } catch {
+                if !Task.isCancelled { self.alert = AppAlert(title: "Could not answer call", message: error.localizedDescription) }
+                self.engine.hangup(call, code: 480, onlyIfRinging: true)
+                let control = self.managedCallControl
+                Task { await control?.decline(call) }
             }
-            self.selectedCallID = callID
-            self.selection = .dialer
-            NSApp.activate(ignoringOtherApps: true)
         }
+        answerTasks[callID] = (call, task)
     }
 
     func decline(callID: Int) {
-        guard calls.contains(where: { $0.id == callID && $0.state == .incoming }) else { return }
+        guard let call = calls.first(where: { $0.id == callID && $0.state == .incoming }) else { return }
+        answerTasks[callID]?.task.cancel()
         declinedCallIDs.insert(callID)
         ringer.stop()
         incomingPanel?.dismiss(callID: callID)
-        engine.hangup(callID: callID, code: 486)
+        engine.hangup(call, code: 486, onlyIfRinging: true)
+        let control = managedCallControl
+        Task { await control?.decline(call) }
     }
 
     func hangup(callID: Int) {
-        engine.hangup(callID: callID, code: 0)
+        guard let call = calls.first(where: { $0.id == callID }) else { return }
+        if call.state == .incoming { decline(callID: callID); return }
+        answerTasks[callID]?.task.cancel()
+        engine.hangup(call)
     }
 
     func hangupActiveCall() {
         guard let call = activeCall else { return }
-        if call.state == .incoming { decline(callID: call.id) } else { hangup(callID: call.id) }
+        if call.conferenceID != nil { engine.hangupConference(call) }
+        else if call.state == .incoming { decline(callID: call.id) }
+        else { hangup(callID: call.id) }
     }
 
     func toggleMute(callID: Int) {
@@ -640,17 +963,80 @@ final class AppState: ObservableObject {
 
     func toggleHold(callID: Int) {
         guard let call = calls.first(where: { $0.id == callID }) else { return }
-        engine.setHold(callID: callID, onHold: !call.isOnHold)
+        if call.isOnHold { swapToCall(callID); return }
+        Task { [weak self] in
+            guard let self, !self.changingAudio else { return }
+            self.changingAudio = true
+            defer { self.changingAudio = false }
+            do {
+                if call.conferenceID != nil { try await self.engine.setConferenceHold(call, onHold: true) }
+                else { try await self.engine.setHold(call, onHold: true) }
+            }
+            catch {
+                if self.calls.contains(where: { $0.id == call.id && $0.startedAt == call.startedAt }) {
+                    self.alert = AppAlert(title: "Could not change hold", message: error.localizedDescription)
+                }
+            }
+        }
     }
 
     func swapToCall(_ callID: Int) {
-        for other in calls where other.id != callID && other.state == .confirmed && !other.isOnHold {
-            engine.setHold(callID: other.id, onHold: true)
+        guard !meetingAudioClaimed else { return }
+        guard let call = calls.first(where: { $0.id == callID }) else { return }
+        Task { [weak self] in
+            guard let self, !self.changingAudio, !self.meetingAudioClaimed else { return }
+            self.changingAudio = true
+            defer { self.changingAudio = false }
+            do {
+                try await self.holdCalls(except: call)
+                if call.conferenceID != nil { try await self.engine.setConferenceHold(call, onHold: false) }
+                else if call.isOnHold { try await self.engine.setHold(call, onHold: false) }
+                guard self.calls.contains(where: { $0.id == call.id && $0.startedAt == call.startedAt }) else { return }
+                self.selectedCallID = callID
+                self.showingNewCall = false
+            } catch {
+                if !Task.isCancelled { self.alert = AppAlert(title: "Could not switch calls", message: error.localizedDescription) }
+            }
         }
-        if let call = calls.first(where: { $0.id == callID }), call.isOnHold {
-            engine.setHold(callID: callID, onHold: false)
+    }
+
+    private func holdCalls(except selected: CallSnapshot? = nil) async throws {
+        var heldGroups = Set<UUID>()
+        for other in engine.activeCalls() where other.state == .confirmed && !other.isOnHold {
+            if other.id == selected?.id && other.startedAt == selected?.startedAt { continue }
+            if let group = other.conferenceID {
+                if group == selected?.conferenceID || !heldGroups.insert(group).inserted { continue }
+                try await engine.setConferenceHold(other, onHold: true)
+            } else { try await engine.setHold(other, onHold: true) }
         }
-        selectedCallID = callID
+    }
+
+    func mergeConference(_ call: CallSnapshot, with other: CallSnapshot) {
+        Task { [weak self] in
+            guard let self, !self.changingAudio else { return }
+            self.changingAudio = true
+            defer { self.changingAudio = false }
+            do {
+                try await self.engine.mergeConference(call, with: other)
+                self.selectedCallID = call.id
+                self.showingNewCall = false
+            } catch { self.alert = AppAlert(title: "Could not merge calls", message: error.localizedDescription) }
+        }
+    }
+
+    func separateConference(_ call: CallSnapshot) {
+        Task { [weak self] in
+            guard let self, !self.changingAudio else { return }
+            self.changingAudio = true
+            defer { self.changingAudio = false }
+            do {
+                // Put both people on hold before removing their shared audio, then resume the selected person.
+                try await self.engine.setConferenceHold(call, onHold: true)
+                try self.engine.splitConference(call)
+                try await self.engine.setHold(call, onHold: false)
+                self.selectedCallID = call.id
+            } catch { self.alert = AppAlert(title: "Could not separate calls", message: error.localizedDescription) }
+        }
     }
 
     func sendDTMF(_ digits: String, callID: Int) {
@@ -659,20 +1045,20 @@ final class AppState: ObservableObject {
         engine.sendDTMF(callID: callID, digits: cleaned)
     }
 
-    func transfer(callID: Int, to target: String) {
-        guard let call = calls.first(where: { $0.id == callID }), let account = account(for: call.accountID) else { return }
-        let uri = account.callURI(for: target)
+    func transfer(_ call: CallSnapshot, to target: String) {
         do {
-            try engine.transfer(callID: callID, to: uri)
+            guard !changingAudio else { throw SIPEngineError.holdUpdating }
+            try engine.transfer(call, to: target)
             transferStatus = "Transferring to \(target)…"
         } catch {
             alert = AppAlert(title: "Transfer failed", message: error.localizedDescription)
         }
     }
 
-    func attendedTransfer(callID: Int, toCallID otherID: Int) {
+    func attendedTransfer(_ call: CallSnapshot, to other: CallSnapshot) {
         do {
-            try engine.attendedTransfer(callID: callID, toCallID: otherID)
+            guard !changingAudio else { throw SIPEngineError.holdUpdating }
+            try engine.attendedTransfer(call, to: other)
             transferStatus = "Completing transfer…"
         } catch {
             alert = AppAlert(title: "Transfer failed", message: error.localizedDescription)
@@ -696,7 +1082,7 @@ final class AppState: ObservableObject {
                                 remoteNumber: call.remoteNumber,
                                 remoteName: call.remoteName,
                                 remoteURI: call.remoteURI,
-                                startedAt: call.startedAt)
+                                startedAt: call.startedAt, isManaged: managedAccountIDs.contains(call.accountID))
         callRecordIDs[call.id] = record.id
         history.insert(record, at: 0)
         persistHistory()
@@ -708,7 +1094,7 @@ final class AppState: ObservableObject {
               let index = history.firstIndex(where: { $0.id == recordID }) else {
             var record = CallRecord(accountID: call.accountID, direction: call.direction, outcome: outcome,
                                     remoteNumber: call.remoteNumber, remoteName: call.remoteName,
-                                    remoteURI: call.remoteURI, startedAt: call.startedAt)
+                                    remoteURI: call.remoteURI, startedAt: call.startedAt, isManaged: managedAccountIDs.contains(call.accountID))
             record.connectedAt = call.connectedAt
             record.endedAt = call.endedAt ?? Date()
             record.statusCode = call.lastStatusCode
@@ -931,6 +1317,16 @@ final class AppState: ObservableObject {
     // MARK: Import
 
     func handle(url: URL) {
+        if ["sipper", "sipper-development"].contains(url.scheme ?? ""), url.host == "setup" {
+            // Opening a setup link only presents a form. Connecting requires an explicit action.
+            managedSetupURL = url
+            (NSApp.delegate as? AppDelegate)?.showMainWindow()
+            return
+        }
+        if url.scheme == managedAccounts.client?.redirectURL.scheme {
+            _ = managedAccounts.client?.resumeSignIn(url: url)
+            return
+        }
         if let scheme = url.scheme?.lowercased(), ["sip", "sips", "tel"].contains(scheme) {
             dial(link: url)
             return
@@ -961,14 +1357,10 @@ final class AppState: ObservableObject {
             target = address.user.isEmpty ? url.absoluteString : "\(address.user)@\(address.host)"
         }
         (NSApp.delegate as? AppDelegate)?.showMainWindow()
-        selection = .dialer
         // Never dial unattended: any web page can open a sip: link. Pre-fill and pick
         // the account on that domain; the user presses Call.
-        dialString = target
-        if let onDomain = accounts.first(where: { !address.host.isEmpty && $0.domain.caseInsensitiveCompare(address.host) == .orderedSame }) {
-            dialerAccountID = onDomain.id
-        }
-        NotificationCenter.default.post(name: .sipperFocusDialer, object: nil)
+        let onDomain = accounts.first(where: { !address.host.isEmpty && $0.domain.caseInsensitiveCompare(address.host) == .orderedSame })
+        prepareNewCall(target, from: onDomain?.id ?? dialerAccount?.id)
     }
 
 
@@ -993,7 +1385,7 @@ final class AppState: ObservableObject {
         let profileID: UUID
         switch choice {
         case .existing(let id):
-            profileID = profiles.contains(where: { $0.id == id }) ? id : profiles[0].id
+            profileID = manualProfiles.contains(where: { $0.id == id }) ? id : manualProfiles[0].id
         case .new(let name):
             profileID = addProfile(name: name, color: nextProfileColor()).id
         }
@@ -1077,17 +1469,17 @@ extension AppState {
         cloudSync.push(collection, data: data)
     }
 
-    private func encodeCloudDocument(_ collection: SyncCollection) -> Data? {
+    func encodeCloudDocument(_ collection: SyncCollection) -> Data? {
         let stones = tombstones[collection] ?? []
         switch collection {
         case .profiles:
-            return try? cloudEncoder.encode(SyncDocument(deviceID: cloudSync.deviceID, items: profiles, tombstones: stones))
+            return try? cloudEncoder.encode(SyncDocument(deviceID: cloudSync.deviceID, items: manualProfiles, tombstones: stones))
         case .accounts:
-            return try? cloudEncoder.encode(SyncDocument(deviceID: cloudSync.deviceID, items: accounts, tombstones: stones))
+            return try? cloudEncoder.encode(SyncDocument(deviceID: cloudSync.deviceID, items: accounts.filter { $0.managed == nil }, tombstones: stones))
         case .contacts:
             return try? cloudEncoder.encode(SyncDocument(deviceID: cloudSync.deviceID, items: contacts, tombstones: stones))
         case .history:
-            return try? cloudEncoder.encode(SyncDocument(deviceID: cloudSync.deviceID, items: Array(history.prefix(5000)), tombstones: stones))
+            return try? cloudEncoder.encode(SyncDocument(deviceID: cloudSync.deviceID, items: Array(history.filter { !$0.isManaged }.prefix(5000)), tombstones: stones))
         }
     }
 
@@ -1115,12 +1507,15 @@ extension AppState {
         case .profiles:
             let docs = decodeDocuments(Profile.self, from: payloads)
             guard !docs.isEmpty else { return }
-            let outcome = SyncMerger.merge(local: profiles, localTombstones: tombstones[.profiles] ?? [],
-                                           remotes: docs.map(\.items), remoteTombstones: docs.map(\.tombstones))
+            let managed = profiles.filter { $0.managedOrganisationID != nil }
+            let reserved = Set(managed.map(\.id))
+            let outcome = SyncMerger.merge(local: manualProfiles, localTombstones: tombstones[.profiles] ?? [],
+                                           remotes: docs.map { $0.items.filter { !reserved.contains($0.id) } },
+                                           remoteTombstones: docs.map { $0.tombstones.filter { !reserved.contains($0.id) } })
             tombstones[.profiles] = outcome.tombstones
             if outcome.changedLocal {
-                profiles = outcome.items.sorted { ($0.sortOrder, $0.createdAt) < ($1.sortOrder, $1.createdAt) }
-                if profiles.isEmpty { profiles = [Profile(name: Profile.defaultName)] }
+                profiles = (outcome.items + managed).sorted { ($0.sortOrder, $0.createdAt) < ($1.sortOrder, $1.createdAt) }
+                if manualProfiles.isEmpty { profiles.insert(Profile(name: Profile.defaultName), at: 0) }
                 ensureAccountsHaveProfiles()
                 persistProfiles(push: outcome.changedRemote)
                 syncEngineAccounts()
@@ -1131,17 +1526,21 @@ extension AppState {
         case .accounts:
             let docs = decodeDocuments(SIPAccount.self, from: payloads)
             guard !docs.isEmpty else { return }
-            let outcome = SyncMerger.merge(local: accounts, localTombstones: tombstones[.accounts] ?? [],
-                                           remotes: docs.map(\.items), remoteTombstones: docs.map(\.tombstones))
+            let managed = accounts.filter { $0.managed != nil }
+            let reserved = Set(managed.map(\.id))
+            let reservedProfiles = Set(profiles.filter { $0.managedOrganisationID != nil }.map(\.id))
+            let outcome = SyncMerger.merge(local: accounts.filter { $0.managed == nil }, localTombstones: tombstones[.accounts] ?? [],
+                                           remotes: docs.map { $0.items.filter { !reserved.contains($0.id) && !reservedProfiles.contains($0.profileID) } },
+                                           remoteTombstones: docs.map { $0.tombstones.filter { !reserved.contains($0.id) } })
             tombstones[.accounts] = outcome.tombstones
             if outcome.changedLocal {
-                let removed = Set(accounts.map(\.id)).subtracting(outcome.items.map(\.id))
+                let removed = Set(accounts.filter { $0.managed == nil }.map(\.id)).subtracting(outcome.items.map(\.id))
                 for id in removed {
                     registrations[id] = nil
                     voicemail[id] = nil
                     if dialerAccountID == id { dialerAccountID = nil }
                 }
-                accounts = outcome.items.sorted { ($0.sortOrder, $0.createdAt) < ($1.sortOrder, $1.createdAt) }
+                accounts = (outcome.items + managed).sorted { ($0.sortOrder, $0.createdAt) < ($1.sortOrder, $1.createdAt) }
                 ensureAccountsHaveProfiles()
                 persistAccounts(push: outcome.changedRemote)
                 if dialerAccountID == nil { dialerAccountID = accounts.first(where: \.isEnabled)?.id }
@@ -1167,11 +1566,14 @@ extension AppState {
             guard settings.iCloudSyncHistory else { return }
             let docs = decodeDocuments(CallRecord.self, from: payloads)
             guard !docs.isEmpty else { return }
-            let outcome = SyncMerger.merge(local: history, localTombstones: tombstones[.history] ?? [],
-                                           remotes: docs.map(\.items), remoteTombstones: docs.map(\.tombstones))
+            let managed = history.filter(\.isManaged)
+            let reserved = Set(managed.map(\.id))
+            let outcome = SyncMerger.merge(local: history.filter { !$0.isManaged }, localTombstones: tombstones[.history] ?? [],
+                                           remotes: docs.map { $0.items.filter { !$0.isManaged && !reserved.contains($0.id) } },
+                                           remoteTombstones: docs.map { $0.tombstones.filter { !reserved.contains($0.id) } })
             tombstones[.history] = outcome.tombstones
             if outcome.changedLocal {
-                history = Array(outcome.items.sorted { $0.startedAt > $1.startedAt }.prefix(5000))
+                history = Array((outcome.items + managed).sorted { $0.startedAt > $1.startedAt }.prefix(5000))
                 persistHistory(push: outcome.changedRemote)
             } else if outcome.changedRemote {
                 pushCloud(.history)
@@ -1214,40 +1616,20 @@ extension AppState: CloudSyncDelegate {
 extension AppState: SIPEngineDelegate {
     nonisolated func sipEngine(_ engine: SIPEngine, registrationDidChange accountID: UUID, state: RegistrationState) {
         Task { @MainActor in
+            guard self.account(for: accountID) != nil else { return }
             self.registrations[accountID] = state
         }
     }
 
     nonisolated func sipEngine(_ engine: SIPEngine, didReceiveIncomingCall call: CallSnapshot) {
-        Task { @MainActor in
-            var call = call
-            if let contact = self.contact(forNumber: call.remoteNumber), call.remoteName.isEmpty {
-                call.remoteName = contact.name
-            }
-            if self.settings.doNotDisturb {
-                self.declinedCallIDs.insert(call.id)
-                self.engine.hangup(callID: call.id, code: 486)
-                self.upsert(call)
-                return
-            }
-            self.upsert(call)
-            self.beginRecord(for: call)
-            if self.selectedCallID == nil { self.selectedCallID = call.id }
-            self.presentIncomingCall(call)
-            let delay = self.settings.autoAnswerSeconds
-            if delay > 0 {
-                let callID = call.id
-                DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(delay)) { [weak self] in
-                    guard let self, self.calls.contains(where: { $0.id == callID && $0.state == .incoming }) else { return }
-                    self.answer(callID: callID)
-                }
-            }
-        }
+        Task { @MainActor in self.receiveIncoming(call) }
     }
 
     nonisolated func sipEngine(_ engine: SIPEngine, callDidChange call: CallSnapshot) {
         Task { @MainActor in
-            var call = call
+            // Gateway SIP headers never supply the displayed caller. Wait for the
+            // authenticated lookup before publishing its state to any view.
+            guard var call = self.verifiedCaller(call) else { return }
             if call.remoteName.isEmpty, let contact = self.contact(forNumber: call.remoteNumber) {
                 call.remoteName = contact.name
             } else if let existing = self.calls.first(where: { $0.id == call.id }), call.remoteName.isEmpty {
@@ -1266,11 +1648,20 @@ extension AppState: SIPEngineDelegate {
 
     nonisolated func sipEngine(_ engine: SIPEngine, callDidEnd call: CallSnapshot) {
         Task { @MainActor in
-            var call = call
+            if self.incomingTasks[call.id]?.call.startedAt == call.startedAt { self.incomingTasks.removeValue(forKey: call.id)?.task.cancel() }
+            if self.answerTasks[call.id]?.call.startedAt == call.startedAt { self.answerTasks.removeValue(forKey: call.id)?.task.cancel() }
+            let verified = self.verifiedCaller(call)
+            if self.verifiedManagedCalls[call.id]?.startedAt == call.startedAt { self.verifiedManagedCalls[call.id] = nil }
+            guard !self.calls.contains(where: { $0.id == call.id && $0.startedAt != call.startedAt }) else { return }
+            var call = verified ?? call
+            if call.gatewayCallID != nil && verified == nil {
+                call.remoteName = ""; call.remoteNumber = "Incoming managed call"; call.remoteURI = ""
+            }
             if let existing = self.calls.first(where: { $0.id == call.id }), call.remoteName.isEmpty {
                 call.remoteName = existing.remoteName
             }
             self.calls.removeAll { $0.id == call.id }
+            if self.calls.isEmpty { self.showingNewCall = false }
             self.incomingPanel?.dismiss(callID: call.id)
             if !self.calls.contains(where: { $0.state == .incoming }) {
                 self.ringer.stop()
@@ -1296,15 +1687,12 @@ extension AppState: SIPEngineDelegate {
     nonisolated func sipEngine(_ engine: SIPEngine, transferStatusDidChange callID: Int, code: Int, text: String, isFinal: Bool) {
         Task { @MainActor in
             if isFinal {
-                self.transferStatus = code / 100 == 2 ? "Transfer completed" : "Transfer failed: \(code) \(text)"
-                if code / 100 == 2 {
-                    self.engine.hangup(callID: callID)
-                }
+                self.transferStatus = text
                 DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
                     self?.transferStatus = nil
                 }
             } else {
-                self.transferStatus = "Transfer: \(code) \(text)"
+                self.transferStatus = text
             }
         }
     }
@@ -1320,6 +1708,12 @@ extension AppState: SIPEngineDelegate {
 // MARK: - NotificationManagerDelegate
 
 extension AppState: NotificationManagerDelegate {
+    nonisolated func notificationManager(_ manager: NotificationManager, shouldPresentMessage hint: ManagedMessageNotification, completion: @escaping (Bool) -> Void) {
+        Task { @MainActor in completion(self.managedAccounts.canPresentMessageNotification(hint)) }
+    }
+    nonisolated func notificationManager(_ manager: NotificationManager, didOpenMessage hint: ManagedMessageNotification) {
+        Task { @MainActor in await self.managedAccounts.openMessageNotification(hint) }
+    }
     nonisolated func notificationManager(_ manager: NotificationManager, didChooseAnswerFor callID: Int) {
         Task { @MainActor in self.answer(callID: callID) }
     }

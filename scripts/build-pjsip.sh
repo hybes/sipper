@@ -28,6 +28,15 @@ if [ ! -d "$SRC" ]; then
   rm -f "$VENDOR/pjproject-$PJSIP_VERSION.tar.gz"
 fi
 
+# Both Apple TLS backends need CommonCrypto for SHA-256 SIP digest in 2.15.1.
+AUTH_PATCH="$ROOT/scripts/patches/pjsip-apple-sha256.patch"
+if patch -d "$SRC" -p1 --forward --dry-run < "$AUTH_PATCH" >/dev/null 2>&1; then
+  patch -d "$SRC" -p1 --forward < "$AUTH_PATCH"
+elif ! patch -d "$SRC" -p1 --reverse --dry-run < "$AUTH_PATCH" >/dev/null 2>&1; then
+  echo "error: cached PJSIP source does not match the Apple digest patch. Re-extract the pinned source before building." >&2
+  exit 1
+fi
+
 # Opus codec, built as a static library with the same deployment target as everything else
 # (a Homebrew bottle targets the build Mac's macOS version, which breaks older systems) and
 # merged into libpjproject.a below.
@@ -148,6 +157,7 @@ libtool -static -o "$PREFIX/lib/libpjproject.a" "${MERGE[@]}" 2>&1 | grep -v 'sa
 {
   echo "pjproject $PJSIP_VERSION for $ARCH, macOS >= $MIN_MACOS"
   echo "opus: $OPUS_VERSION"
+  shasum -a 256 "$AUTH_PATCH"
   echo
   echo "--- libpjproject.pc ---"
   cat "$PREFIX/lib/pkgconfig/libpjproject.pc"

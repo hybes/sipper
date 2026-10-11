@@ -54,7 +54,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: windows/vendor/pjsip-win
-          key: pjsip-win-x64-${{ hashFiles('windows/scripts/build-pjsip.ps1') }}
+          key: pjsip-win-x64-${{ hashFiles('windows/scripts/build-pjsip.ps1', 'windows/scripts/pjsip-schannel-sha256.patch') }}
 
       - name: Build PJSIP and Opus
         if: steps.pjsip.outputs.cache-hit != 'true'
@@ -66,10 +66,10 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: windows/vendor/pjsip-win
-          key: pjsip-win-x64-${{ hashFiles('windows/scripts/build-pjsip.ps1') }}
+          key: pjsip-win-x64-${{ hashFiles('windows/scripts/build-pjsip.ps1', 'windows/scripts/pjsip-schannel-sha256.patch') }}
 
       - name: Build the engine and browser helper
-        run: windows/engine/build-windows.ps1
+        run: windows/engine/build-windows.ps1 -Testing
 
       - name: Install dependencies
         working-directory: windows
@@ -87,7 +87,9 @@ jobs:
 
       - name: Package the installer
         working-directory: windows
-        run: npm run dist
+        run: |
+          engine/build-windows.ps1
+          npm run dist
 
       - name: End-to-end test of the packaged app
         working-directory: windows

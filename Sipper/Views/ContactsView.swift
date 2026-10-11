@@ -1,11 +1,14 @@
 import SwiftUI
+import SipperManaged
 
 struct ContactsView: View {
     @EnvironmentObject private var state: AppState
+    @ObservedObject var managed: ManagedAccountsController
     @Binding var sheet: MainSheet?
     @State private var selectedID: UUID?
     @State private var search = ""
     @State private var contactToDelete: Contact?
+    @State private var companyDirectory = false
 
     private var filtered: [Contact] {
         let needle = search.trimmingCharacters(in: .whitespaces).lowercased()
@@ -18,6 +21,33 @@ struct ContactsView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            Picker("Contact source", selection: $companyDirectory) {
+                Text("Personal").tag(false)
+                Text("Company directory").tag(true)
+            }.pickerStyle(.segmented).frame(maxWidth: 360).padding(12)
+            Divider()
+            if companyDirectory {
+                if let client = managed.client {
+                    ManagedDirectoryView(client: client, accounts: state.accounts.filter { state.canUseAccount($0) }.compactMap { ManagedAccountMapper.directoryAccount($0) }) { enrollment, contact, number, account in
+                        try state.callDirectory(number, contactID: contact, enrollment: enrollment, accountID: account)
+                    }
+                } else { Text("Managed access is unavailable. Open Settings to sign in.").foregroundStyle(.secondary).padding() }
+            } else { personalContacts }
+        }
+        .navigationTitle("Contacts")
+        .confirmationDialog("Delete \(contactToDelete?.name ?? "contact")?",
+                            isPresented: Binding(get: { contactToDelete != nil }, set: { if !$0 { contactToDelete = nil } }),
+                            presenting: contactToDelete) { contact in
+            Button("Delete Contact", role: .destructive) {
+                state.deleteContact(contact.id)
+                if selectedID == contact.id { selectedID = nil }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private var personalContacts: some View {
         Group {
             if state.contacts.isEmpty {
                 ContentUnavailableView {
@@ -37,7 +67,6 @@ struct ContactsView: View {
                 }
             }
         }
-        .navigationTitle("Contacts")
         .searchable(text: $search, placement: .toolbar, prompt: "Name, company or number")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -48,15 +77,6 @@ struct ContactsView: View {
                 }
                 .help("Add a contact")
             }
-        }
-        .confirmationDialog("Delete \(contactToDelete?.name ?? "contact")?",
-                            isPresented: Binding(get: { contactToDelete != nil }, set: { if !$0 { contactToDelete = nil } }),
-                            presenting: contactToDelete) { contact in
-            Button("Delete Contact", role: .destructive) {
-                state.deleteContact(contact.id)
-                if selectedID == contact.id { selectedID = nil }
-            }
-            Button("Cancel", role: .cancel) {}
         }
     }
 

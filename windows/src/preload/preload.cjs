@@ -4,7 +4,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const EVENTS = new Set([
-  'state', 'navigate', 'prefillDialer', 'command', 'ring', 'ringStop', 'logChanged', 'theme',
+  'state', 'navigate', 'prefillDialer', 'command', 'ring', 'ringStop', 'logChanged', 'theme', 'meetingShareSources',
 ]);
 
 contextBridge.exposeInMainWorld('sipper', {

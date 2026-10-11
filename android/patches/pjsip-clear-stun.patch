@@ -1,0 +1,18 @@
+--- a/pjsip/src/pjsua-lib/pjsua_core.c
++++ b/pjsip/src/pjsua-lib/pjsua_core.c
+@@ -1671,9 +1671,14 @@
+     unsigned i;
+     pj_status_t status;
+ 
+-    PJ_ASSERT_RETURN(count && srv, PJ_EINVAL);
++    /* Sipper: permit removing the final managed STUN server. Also cancel an
++     * older lookup so its callback cannot restore an obsolete server. */
++    PJ_ASSERT_RETURN(count <= PJ_ARRAY_SIZE(pjsua_var.ua_cfg.stun_srv) &&
++                     (!count || srv), PJ_EINVAL);
++    pjsua_cancel_stun_resolution(NULL, PJ_FALSE);
+     
+     PJSUA_LOCK();
++    pj_bzero(&pjsua_var.stun_srv, sizeof(pjsua_var.stun_srv));
+ 
+     pjsua_var.ua_cfg.stun_srv_cnt = count;
+     for (i = 0; i < count; i++) {

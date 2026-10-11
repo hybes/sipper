@@ -7,7 +7,7 @@ import { Icon } from './components.js';
 import { html, render, useEffect, useRef } from './lib.js';
 import { accountByID, act, loadState, service, useAppState } from './store.js';
 
-function IncomingCard({ call, account }) {
+function IncomingCard({ call, account, meetingActive }) {
   return html`<article class="incoming-card" aria-label=${`Incoming call from ${callDisplayName(call)}`}>
     <div class="incoming-top">
       <span class="incoming-pulse" aria-hidden="true"><${Icon} name="callIncomingFilled" size=${20} /></span>
@@ -18,9 +18,10 @@ function IncomingCard({ call, account }) {
         ${account ? html`<span class="incoming-detail">via ${displayLabel(account)}</span>` : null}
       </div>
     </div>
+    ${meetingActive ? html`<p class="caption">Answering will leave your meeting.</p>` : null}
     <div class="incoming-actions">
       <button type="button" class="button danger" onClick=${() => act('decline', call.id)}><${Icon} name="callEnd" /><span>Decline</span></button>
-      <button type="button" class="button success" onClick=${() => act('answer', call.id)}><${Icon} name="call" /><span>Answer</span></button>
+      <button type="button" class="button success" onClick=${() => act('answer', call.id)}><${Icon} name="call" /><span>${meetingActive ? 'Switch & answer' : 'Answer'}</span></button>
     </div>
   </article>`;
 }
@@ -57,7 +58,7 @@ function IncomingWindow() {
   return html`<div class="incoming-list" ref=${list}>
     ${ringing.length === 0
       ? html`<div class="incoming-card"><p class="caption">No incoming calls</p></div>`
-      : ringing.map((call) => html`<${IncomingCard} key=${call.id} call=${call} account=${accountByID(state, call.accountID)} />`)}
+      : ringing.map((call) => html`<${IncomingCard} key=${call.id} call=${call} account=${accountByID(state, call.accountID)} meetingActive=${state.meetingActive} />`)}
   </div>`;
 }
 

@@ -87,6 +87,11 @@ struct CallSnapshot: Identifiable, Equatable {
     var endedAt: Date?
     var lastStatusCode: Int
     var lastStatusText: String
+    var gatewayCallID: UUID? = nil
+    var managedAccount: ManagedAccountBinding? = nil
+    var isTransferring = false
+    var transferStatus: String? = nil
+    var conferenceID: UUID? = nil
 
     var isActive: Bool { state != .disconnected }
     var isRinging: Bool { state == .incoming }
@@ -154,6 +159,14 @@ enum SIPEngineError: LocalizedError {
     case unknownAccount
     case unknownCall
     case accountNotRegistered
+    case transferUnavailable
+    case invalidTransferTarget
+    case networkUpdating
+    case holdUpdating
+    case holdTimedOut
+    case holdRejected(code: Int)
+    case conferenceUnavailable
+    case conferenceControlRequired
 
     var errorDescription: String? {
         switch self {
@@ -163,6 +176,14 @@ enum SIPEngineError: LocalizedError {
         case .unknownAccount: return "The account is not active."
         case .unknownCall: return "The call no longer exists."
         case .accountNotRegistered: return "The account is not registered."
+        case .transferUnavailable: return "Transfer requires two available direct SIP calls on the same account, or one call and a destination."
+        case .invalidTransferTarget: return "Enter a valid phone number or SIP address."
+        case .networkUpdating: return "The network connection is still recovering. Try again."
+        case .holdUpdating: return "The call is still updating. Try again."
+        case .holdTimedOut: return "The phone system did not confirm the hold change. Check the call and try again."
+        case .holdRejected(let code): return "The phone system rejected the hold change (SIP \(code))."
+        case .conferenceUnavailable: return "Choose two connected calls on the same account to merge."
+        case .conferenceControlRequired: return "Hold or resume the whole conference. Separate the calls before transferring."
         }
     }
 }

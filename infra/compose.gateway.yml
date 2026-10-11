@@ -1,0 +1,69 @@
+name: sipper-gateway
+
+x-runtime: &runtime
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  restart: unless-stopped
+  stop_grace_period: -1s
+  logging:
+    driver: local
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  asterisk:
+    <<: *runtime
+    image: ${SIPPER_ASTERISK_IMAGE:-sipper-asterisk:22.11.0}
+    env_file:
+      - path: ${SIPPER_ASTERISK_ENV_FILE:?Set an absolute path to the private Asterisk environment file}
+        format: raw
+    environment:
+      SIPPER_ARI_BIND: 127.0.0.1
+      SIPPER_AMI_BIND: 127.0.0.1
+      SIPPER_RTP_START: ${SIPPER_GATEWAY_RTP_START:-20000}
+      SIPPER_RTP_END: ${SIPPER_GATEWAY_RTP_END:-20199}
+    volumes:
+      - type: bind
+        source: ${SIPPER_GATEWAY_TLS_DIRECTORY:?Set the private SIP certificate directory}
+        target: /run/tls
+        read_only: true
+        bind: {create_host_path: false}
+    tmpfs:
+      - /etc/asterisk:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700
+      - /run/asterisk:rw,noexec,nosuid,size=4m,uid=10001,gid=10001,mode=0700
+      - /var/spool/asterisk:rw,noexec,nosuid,size=4m,uid=10001,gid=10001,mode=0700
+      - /var/log/asterisk:rw,noexec,nosuid,size=4m,uid=10001,gid=10001,mode=0700
+      - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+    ports:
+      - "${SIPPER_GATEWAY_BIND_IP:-127.0.0.1}:${SIPPER_GATEWAY_TLS_PORT:-5061}:5061/tcp"
+      - "${SIPPER_GATEWAY_BIND_IP:-127.0.0.1}:${SIPPER_GATEWAY_RTP_START:-20000}-${SIPPER_GATEWAY_RTP_END:-20199}:${SIPPER_GATEWAY_RTP_START:-20000}-${SIPPER_GATEWAY_RTP_END:-20199}/udp"
+    healthcheck:
+      test: [CMD, asterisk, -rx, core waitfullybooted]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 2s
+      retries: 3
+  controller:
+    <<: *runtime
+    image: ${SIPPER_CONTROLLER_IMAGE:-sipper-controller:local}
+    env_file:
+      - path: ${SIPPER_CONTROLLER_ENV_FILE:?Set an absolute path to the private controller environment file}
+        format: raw
+    environment:
+      SIPPER_ARI_URL: http://127.0.0.1:8088/ari
+      SIPPER_AMI_URL: tcp://127.0.0.1:5038
+      SIPPER_STATE_FILE: /var/lib/sipper-gateway/controller.sqlite
+    network_mode: service:asterisk
+    depends_on:
+      asterisk: {condition: service_healthy}
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+    volumes:
+      - controller-state:/var/lib/sipper-gateway
+
+volumes:
+  controller-state:

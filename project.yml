@@ -1,5 +1,9 @@
 # XcodeGen project definition. Regenerate with `make project` (or `xcodegen generate`).
 name: Sipper
+configs:
+  Debug: debug
+  Release: release
+  Development: debug
 options:
   bundleIdPrefix: com.hybes
   deploymentTarget:
@@ -8,6 +12,10 @@ options:
   generateEmptyDirectories: true
   groupSortPosition: top
   xcodeVersion: "16.0"
+
+packages:
+  SipperManaged:
+    path: packages/SipperManaged
 
 settings:
   base:
@@ -35,8 +43,8 @@ targets:
     info:
       path: Sipper/Info.plist
       properties:
-        CFBundleName: Sipper
-        CFBundleDisplayName: Sipper
+        CFBundleName: $(PRODUCT_NAME)
+        CFBundleDisplayName: $(PRODUCT_NAME)
         CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -45,13 +53,14 @@ targets:
         LSApplicationCategoryType: public.app-category.business
         NSHumanReadableCopyright: "© 2026 Ben Hybert"
         NSMicrophoneUsageDescription: "Sipper needs the microphone so the other side of a call can hear you."
+        NSCameraUsageDescription: "Sipper uses your camera when you turn it on in a meeting."
         NSPrincipalClass: NSApplication
         NSSupportsAutomaticTermination: false
         NSSupportsSuddenTermination: false
         LSUIElement: false
         CFBundleURLTypes:
           - CFBundleURLName: com.hybes.sipper
-            CFBundleURLSchemes: [sipper]
+            CFBundleURLSchemes: [$(SIPPER_IMPORT_SCHEME), $(SIPPER_OAUTH_SCHEME)]
             CFBundleTypeRole: Viewer
           - CFBundleURLName: com.hybes.sipper.dial
             CFBundleURLSchemes: [sip, sips, tel]
@@ -60,13 +69,22 @@ targets:
       path: Sipper/Sipper.entitlements
       properties:
         com.apple.security.app-sandbox: false
+        com.apple.security.device.camera: true
         com.apple.security.device.audio-input: true
         com.apple.security.network.client: true
         com.apple.security.network.server: true
     settings:
+      configs:
+        Development:
+          PRODUCT_BUNDLE_IDENTIFIER: com.hybes.sipper.development
+          PRODUCT_NAME: Sipper Development
+          SIPPER_OAUTH_SCHEME: com.hybes.sipper.development
+          SIPPER_IMPORT_SCHEME: sipper-development
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hybes.sipper
         PRODUCT_NAME: Sipper
+        SIPPER_OAUTH_SCHEME: com.hybes.sipper
+        SIPPER_IMPORT_SCHEME: sipper
         SWIFT_OBJC_BRIDGING_HEADER: Sipper/SIP/Bridging/Sipper-Bridging-Header.h
         HEADER_SEARCH_PATHS:
           - "$(SRCROOT)/vendor/pjsip/include"
@@ -86,6 +104,7 @@ targets:
         COMBINE_HIDPI_IMAGES: YES
         ENABLE_TESTABILITY: YES
     dependencies:
+      - package: SipperManaged
       - sdk: CoreAudio.framework
       - sdk: CoreServices.framework
       - sdk: AudioToolbox.framework
@@ -124,6 +143,12 @@ targets:
           - "-DPJ_AUTOCONF=1"
 
 schemes:
+  SipperDevelopment:
+    build:
+      targets:
+        Sipper: all
+    run:
+      config: Development
   Sipper:
     build:
       targets:
@@ -135,5 +160,8 @@ schemes:
       config: Debug
       targets:
         - SipperTests
+      environmentVariables:
+        SIPPER_TEST_GATEWAY_FILE: "$(SIPPER_TEST_GATEWAY_FILE)"
+        SIPPER_TEST_DIRECT_DND: "$(SIPPER_TEST_DIRECT_DND)"
     archive:
       config: Release

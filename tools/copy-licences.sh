@@ -27,6 +27,9 @@ rm -rf "$dest"
 mkdir -p "$dest"
 
 copy "$root/LICENSE" Sipper.txt
+copy "$root/packages/SipperManaged/Sources/SipperManaged/Resources/Licenses/AppAuth-3.0.0.txt" AppAuth.txt
+copy "$root/packages/SipperManaged/Sources/SipperManaged/Resources/Licenses/AppAuth-AUTHORS.txt" AppAuth-AUTHORS.txt
+cp "$root"/packages/SipperManaged/Sources/SipperManaged/Resources/Licenses/LiveKit* "$dest/"
 copy "$src/COPYING" PJSIP.txt
 copy "$src/third_party/srtp/LICENSE" libsrtp.txt
 copy "$src/third_party/speex/COPYING" Speex.txt
@@ -46,6 +49,10 @@ fi
   {
     echo "Component|Licence|File"
     echo "Sipper|GNU GPL version 3 or later|Sipper.txt"
+    echo "AppAuth 3.0.0 (OpenID Foundation)|Apache License 2.0|AppAuth.txt and AppAuth-AUTHORS.txt"
+    echo "LiveKit Swift 2.17.0 and UniFFI 0.1.9|Apache License 2.0|LiveKit*.txt"
+    echo "LiveKit WebRTC 150.7871.02 and bundled dependencies|BSD 3-clause, MIT wrapper and third-party notices|LiveKitWebRTC*.txt"
+    echo "LiveKit nanopb runtime|zlib|LiveKit-nanopb.txt"
     echo "PJSIP (pjproject $pjsip_version)|GNU GPL version 2 or later|PJSIP.txt"
     if [ -n "$opus_line" ]; then echo "$opus_line"; fi
     echo "libsrtp (Cisco Systems)|BSD 3-clause|libsrtp.txt"

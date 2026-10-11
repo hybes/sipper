@@ -1,0 +1,27 @@
+# Allow only application sources. In particular, never send .env, .data or the
+# developer's node_modules/build output to the Docker daemon.
+**
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!nuxt.config.ts
+!tsconfig.json
+!app/**
+!public/**
+!server/**
+!shared/**
+!scripts/
+scripts/**
+!scripts/migrate.ts
+!scripts/worker.ts
+!scripts/push-worker.ts
+!scripts/meeting-worker.ts
+!scripts/worker-health.ts
+!scripts/grant-owner.ts
+!scripts/container-entrypoint.sh
+!scripts/preflight.ts
+**/.env*
+**/*.key
+**/*.pem
+**/*.p8
+**/.DS_Store

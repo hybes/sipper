@@ -33,7 +33,13 @@ export function AccountPage({ id }) {
     if (quickDial.trim() && await act('call', quickDial, account.id)) setQuickDial('');
   };
 
-  const rows = [
+  const managedSettings = () => ui.navigate({ kind: 'settings', tab: 'managed' });
+  const rows = account.managed ? [
+    ['Managed by', profile?.name ?? 'Your organisation'],
+    ['Transport', transportName(account.transport)],
+    ['Media encryption', SRTP_NAMES[account.srtp]],
+    ['Settings valid until', new Date(account.managed.expiresAt).toLocaleString()],
+  ] : [
     ['Username', account.username],
     account.authUsername && ['Auth username', account.authUsername],
     ['Domain', account.domain],
@@ -53,7 +59,7 @@ export function AccountPage({ id }) {
   return html`<div class="page">
     <${PageHeader} title=${displayLabel(account)}>
       <${Button} icon="sync" disabled=${!live} onClick=${() => act('reRegister', account.id)}>Re-register</${Button}>
-      <${Button} icon="edit" onClick=${() => ui.openDialog({ kind: 'editAccount', id: account.id })}>Edit</${Button}>
+      ${account.managed ? html`<${Button} onClick=${managedSettings}>Managed accounts</${Button}>` : html`<${Button} icon="edit" onClick=${() => ui.openDialog({ kind: 'editAccount', id: account.id })}>Edit</${Button}>`}
     </${PageHeader}>
     <div class="page-body scroll">
       <div class="detail">
@@ -67,7 +73,7 @@ export function AccountPage({ id }) {
               <${Icon} name=${PROFILE_ICONS[profile.iconName] ?? 'building'} size=${12} />${profile.name}
             </button>` : null}
           </div>
-          <${Toggle} checked=${account.isEnabled} label="Enabled" onChange=${(on) => act('setAccountEnabled', account.id, on)} />
+          ${!account.managed ? html`<${Toggle} checked=${account.isEnabled} label="Enabled" onChange=${(on) => act('setAccountEnabled', account.id, on)} />` : null}
         </div>
 
         ${!state.engineStatus.running && state.engineStatus.error
@@ -99,9 +105,9 @@ export function AccountPage({ id }) {
           <div class="card-list" role="list">${recent.map((record) => html`<${HistoryRow} key=${record.id} record=${record} />`)}</div>
         </section>` : null}
 
-        <div class="detail-footer">
+        ${!account.managed ? html`<div class="detail-footer">
           <${Button} kind="subtle" icon="delete" className="danger-text" onClick=${() => deleteAccountWithConfirmation(account)}>Delete account…</${Button}>
-        </div>
+        </div>` : null}
       </div>
     </div>
   </div>`;
@@ -119,20 +125,21 @@ export function ProfilePage({ id }) {
 
   return html`<div class="page">
     <${PageHeader} title=${profile.name}>
+      ${profile.managed ? html`<${Button} onClick=${() => ui.navigate({ kind: 'settings', tab: 'managed' })}>Managed accounts</${Button}>` : html`
       <${Button} icon="personAdd" onClick=${() => ui.openDialog({ kind: 'addAccount', profileID: profile.id })}>Add account</${Button}>
-      <${Button} icon="edit" onClick=${() => ui.openDialog({ kind: 'editProfile', id: profile.id })}>Edit</${Button}>
+      <${Button} icon="edit" onClick=${() => ui.openDialog({ kind: 'editProfile', id: profile.id })}>Edit</${Button}>`}
     </${PageHeader}>
     <div class="page-body scroll">
       <div class=${cx('detail', `tint-${profile.colorName}`)}>
         <div class="overview">
           <span class="profile-badge-large"><${Icon} name=${PROFILE_ICONS[profile.iconName] ?? 'building'} size=${24} /></span>
           <div class="overview-text"><span class="secondary">${summary}</span></div>
-          <${Toggle} checked=${profile.isEnabled} label="Enabled" onChange=${(on) => act('setProfileEnabled', profile.id, on)} />
+          ${!profile.managed ? html`<${Toggle} checked=${profile.isEnabled} label="Enabled" onChange=${(on) => act('setProfileEnabled', profile.id, on)} />` : null}
         </div>
 
         ${members.length === 0
-          ? html`<${EmptyState} icon="personAdd" title="No accounts in this profile" description="Add an account, or move one here from another profile.">
-              <${Button} onClick=${() => ui.openDialog({ kind: 'addAccount', profileID: profile.id })}>Add account…</${Button}>
+          ? html`<${EmptyState} icon="personAdd" title="No accounts in this profile" description=${profile.managed ? 'Your administrator has not assigned any calling accounts yet.' : 'Add an account, or move one here from another profile.'}>
+              ${!profile.managed ? html`<${Button} onClick=${() => ui.openDialog({ kind: 'addAccount', profileID: profile.id })}>Add account…</${Button}>` : null}
             </${EmptyState}>`
           : html`<div class="card rows-card" role="list">
             ${members.map((account) => {
@@ -142,7 +149,7 @@ export function ProfilePage({ id }) {
                 <${StatusDot} registration=${live ? status : registration.unregistered()} />
                 <div class="member-text">
                   <span class="ellipsis">${displayLabel(account)}</span>
-                  <span class="caption ellipsis">${account.username}@${account.domain} · ${transportName(account.transport)}</span>
+                  <span class="caption ellipsis">${account.managed ? 'Managed account' : `${account.username}@${account.domain}`} · ${transportName(account.transport)}</span>
                 </div>
                 <span class=${cx('caption', live && isFailed(status) && 'danger-text')}>${live ? registrationShortLabel(status) : 'Disabled'}</span>
                 <${Button} onClick=${() => ui.navigate({ kind: 'account', id: account.id })}>Show</${Button}>
@@ -150,7 +157,7 @@ export function ProfilePage({ id }) {
             })}
           </div>`}
 
-        ${state.profiles.length > 1 ? html`<div class="detail-footer">
+        ${!profile.managed && state.profiles.filter(p => !p.managed).length > 1 ? html`<div class="detail-footer">
           <${Button} kind="subtle" icon="delete" className="danger-text" onClick=${() => deleteProfileWithChoice(state, profile)}>Delete profile…</${Button}>
         </div>` : null}
       </div>
@@ -169,7 +176,7 @@ export function AccountDialog({ mode }) {
   const [draft, setDraft] = useState(() => (existing
     ? { ...existing }
     : makeAccount({
-      profileID: profileByID(state, mode.profileID)?.id ?? state.profiles[0]?.id,
+      profileID: state.profiles.find(p => !p.managed && p.id === mode.profileID)?.id ?? state.profiles.find(p => !p.managed)?.id,
       transport: state.settings.defaultTransport,
     })));
   const [password, setPassword] = useState('');
@@ -217,7 +224,7 @@ export function AccountDialog({ mode }) {
   else if (accountValidationErrors(candidate)[0]) validation = accountValidationErrors(candidate)[0];
   else if (!password) validation = 'Password is required.';
   else {
-    const duplicate = state.accounts.find((a) => a.id !== draft.id
+    const duplicate = state.accounts.find((a) => !a.managed && a.id !== draft.id
       && a.username === draft.username.trim() && a.domain.toLowerCase() === draft.domain.trim().toLowerCase());
     if (duplicate) validation = `${displayLabel(duplicate)} already exists in ${profileByID(state, duplicate.profileID)?.name ?? 'another profile'}.`;
   }
@@ -250,6 +257,10 @@ export function AccountDialog({ mode }) {
     <${Button} onClick=${ui.closeDialog}>Cancel</${Button}>
     <${Button} kind="accent" disabled=${Boolean(validation) || saving} onClick=${save}>${editing ? 'Save' : 'Add account'}</${Button}>`;
 
+  if (existing?.managed) return html`<${Dialog} title="Managed account" onClose=${ui.closeDialog}>
+    <p>Your organisation manages this account. Open Settings → Managed accounts to disconnect it.</p>
+  </${Dialog}>`;
+
   return html`<${Dialog} title=${editing ? 'Edit account' : 'Add account'} onClose=${ui.closeDialog} width=${600} footer=${footer}>
     <form class="form-stack" onSubmit=${(event) => {
       event.preventDefault();
@@ -261,7 +272,7 @@ export function AccountDialog({ mode }) {
             placeholder=${draft.username && draft.domain ? defaultLabel(draft) : 'Optional'} />
         </${Field}>
         <${Field} label="Profile">
-          <${Select} value=${draft.profileID} options=${state.profiles.map((p) => ({ value: p.id, label: p.name }))} onChange=${set('profileID')} />
+          <${Select} value=${draft.profileID} options=${state.profiles.filter(p => !p.managed).map((p) => ({ value: p.id, label: p.name }))} onChange=${set('profileID')} />
         </${Field}>
       </div>
       <${Toggle} checked=${draft.isEnabled} label="Enabled" onChange=${set('isEnabled')} />
@@ -364,6 +375,10 @@ export function ProfileDialog({ mode }) {
   const footer = html`<span class="spacer"></span>
     <${Button} onClick=${ui.closeDialog}>Cancel</${Button}>
     <${Button} kind="accent" disabled=${!valid} onClick=${save}>${editing ? 'Save' : 'Add profile'}</${Button}>`;
+
+  if (draft.managed) return html`<${Dialog} title="Managed profile" onClose=${ui.closeDialog}>
+    <p>Your organisation manages this profile. Open Settings → Managed accounts to disconnect it.</p>
+  </${Dialog}>`;
 
   return html`<${Dialog} title=${editing ? 'Edit profile' : 'Add profile'} onClose=${ui.closeDialog} width=${460} footer=${footer}>
     <form class=${cx('form-stack', `tint-${draft.colorName}`)} onSubmit=${(event) => {

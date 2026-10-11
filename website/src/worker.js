@@ -24,6 +24,7 @@
 // reads correctly if the Worker is bypassed.
 
 import { PLATFORMS, detectPlatform, downloadURLs } from './platform.js';
+import { isPortalPath, proxyPortal } from './portal.js';
 
 const CANONICAL_HOST = 'sipper.dev';
 
@@ -49,8 +50,15 @@ export default {
 
 		if (url.hostname === `www.${CANONICAL_HOST}`) {
 			url.hostname = CANONICAL_HOST;
-			return withHeaders(Response.redirect(url.href, 301), url);
+			url.protocol = 'https:';
+			return withHeaders(Response.redirect(url.href, isPortalPath(url.pathname) ? 308 : 301), url);
 		}
+		if (url.hostname === CANONICAL_HOST && url.protocol !== 'https:') {
+			url.protocol = 'https:';
+			return withHeaders(Response.redirect(url.href, 308), url);
+		}
+
+		if (isPortalPath(url.pathname)) return proxyPortal(request, env);
 
 		const downloads = downloadURLs(env);
 		const launched = PLATFORMS.some((platform) => downloads[platform]);

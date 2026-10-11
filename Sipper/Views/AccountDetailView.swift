@@ -16,8 +16,8 @@ struct AccountDetailView: View {
                 .toolbar {
                     ToolbarItemGroup(placement: .primaryAction) {
                         Button("Re-register") { state.reRegister(account.id) }
-                            .disabled(!account.isEnabled)
-                        Button("Edit…") { sheet = .editAccount(account.id) }
+                            .disabled(!state.canUseAccount(account))
+                        if account.managed == nil { Button("Edit…") { sheet = .editAccount(account.id) } }
                     }
                 }
                 .confirmationDialog("Delete \(account.displayLabel)?", isPresented: $confirmDelete) {
@@ -97,7 +97,17 @@ struct AccountDetailView: View {
                     .padding(.vertical, 4)
                 }
 
-                GroupBox("Connection") {
+                if let managed = account.managed {
+                    GroupBox("Managed by your organisation") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Your administrator supplies the connection settings for this account.")
+                            Text("Settings valid until \(managed.expiresAt.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.caption).foregroundStyle(.secondary)
+                            SettingsLink { Text("Managed account settings…") }
+                        }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 4)
+                    }
+                } else {
+                  GroupBox("Connection") {
                     Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
                         detailRow("Username", account.username)
                         if !account.authUsername.isEmpty { detailRow("Auth username", account.authUsername) }
@@ -118,6 +128,7 @@ struct AccountDetailView: View {
                     }
                     .padding(.vertical, 4)
                     .textSelection(.enabled)
+                  }
                 }
 
                 if !account.notes.isEmpty {
@@ -139,10 +150,10 @@ struct AccountDetailView: View {
                     }
                 }
 
-                HStack {
+                if account.managed == nil { HStack {
                     Spacer()
                     Button("Delete Account…", role: .destructive) { confirmDelete = true }
-                }
+                } }
             }
             .padding(24)
             .frame(maxWidth: 640, alignment: .leading)
@@ -193,9 +204,9 @@ struct ProfileDetailView: View {
                         ContentUnavailableView {
                             Label("No accounts in this profile", systemImage: "person.crop.circle.badge.plus")
                         } description: {
-                            Text("Add an account or move one here from another profile.")
+                            Text(profile.managedOrganisationID == nil ? "Add an account or move one here from another profile." : "Your administrator can assign calling accounts to you in the portal.")
                         } actions: {
-                            Button("Add Account…") { sheet = .addAccount(profileID: profile.id) }
+                            if profile.managedOrganisationID == nil { Button("Add Account…") { sheet = .addAccount(profileID: profile.id) } }
                         }
                         .frame(height: 220)
                     } else {
@@ -231,12 +242,14 @@ struct ProfileDetailView: View {
             .navigationTitle(profile.name)
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
+                    if profile.managedOrganisationID == nil {
                     Button {
                         sheet = .addAccount(profileID: profile.id)
                     } label: {
                         Label("Add Account", systemImage: "person.badge.plus")
                     }
                     Button("Edit…") { sheet = .editProfile(profile.id) }
+                    } else { SettingsLink { Text("Managed account settings…") } }
                 }
             }
         } else {

@@ -23,6 +23,6 @@ libs=(-L"$pjsip/lib" -lpjproject -lc++
       -framework CoreAudio -framework CoreServices -framework AudioUnit -framework AudioToolbox
       -framework Foundation -framework AppKit -framework Security -framework AVFoundation)
 
-cc "${cflags[@]}" -DPJ_AUTOCONF=1 -I"$pjsip/include" "$here/src/engine.c" "$here/third_party/cjson/cJSON.c" "${libs[@]}" -o "$out/sipper-engine"
+cc "${cflags[@]}" -DSIPPER_TESTING=1 -DPJ_AUTOCONF=1 -I"$pjsip/include" "$here/src/engine.c" "$here/third_party/cjson/cJSON.c" "${libs[@]}" -o "$out/sipper-engine"
 cc "${cflags[@]}" "$here/src/native_host.c" "$here/third_party/cjson/cJSON.c" -o "$out/sipper-browser-host"
 echo "Built $out/sipper-engine and $out/sipper-browser-host"

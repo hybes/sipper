@@ -27,12 +27,13 @@ export function freePort() {
 }
 
 /** tools/sip-test-server.py with users 1001 and 1002 (password "secret"), *97 answered, 2/5 voicemail for 1001. */
-export async function startSIPServer(port) {
+export async function startSIPServer(port, specialCallSeconds = 3) {
   const args = [
     path.join(repository, 'tools', 'sip-test-server.py'),
     '--port', String(port), '--tls-port', '0',
     '--user', '1001:secret', '--user', '1002:secret',
     '--mwi', '1001:2/5', '--answer-special',
+    '--special-call-seconds', String(specialCallSeconds),
   ];
   const child = spawn(python, args, { stdio: ['ignore', 'pipe', 'pipe'] });
   const output = [];
@@ -66,7 +67,7 @@ export async function startEngine(label) {
       }
     }
   };
-  for (const type of ['registration', 'incomingCall', 'callChanged', 'callEnded', 'voicemail', 'transferStatus']) {
+  for (const type of ['registration', 'incomingCall', 'callChanged', 'callEnded', 'voicemail', 'transferStatus', 'network', 'networkRecovered']) {
     engine.on(type, record(type));
   }
   engine.on('log', (line) => logs.push(line));
@@ -85,6 +86,7 @@ export async function startEngine(label) {
     });
   };
   engine.clearEvents = () => events.splice(0, events.length);
+  engine.events = events;
   engine.label = label;
   await engine.launch();
   return engine;

@@ -3,7 +3,8 @@
 #
 #   pwsh windows/engine/build-windows.ps1
 param(
-  [string]$Deps = (Join-Path $PSScriptRoot '..\vendor\pjsip-win')
+  [string]$Deps = (Join-Path $PSScriptRoot '..\vendor\pjsip-win'),
+  [switch]$Testing
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -43,6 +44,7 @@ $compile = @(
   "/I$(Join-Path $Deps 'include')", "/I$cjson", "/I$out", "/Fo$objects\"
 )
 $link = @('/link', '/SUBSYSTEM:CONSOLE', '/DYNAMICBASE', '/NXCOMPAT', '/guard:cf', '/MANIFEST:EMBED', "/MANIFESTINPUT:$manifest")
+if ($Testing) { $compile += '/DSIPPER_TESTING=1' }
 $systemLibraries = @(
   'ws2_32.lib', 'mswsock.lib', 'iphlpapi.lib', 'winmm.lib', 'ole32.lib', 'oleaut32.lib', 'uuid.lib',
   'advapi32.lib', 'user32.lib', 'gdi32.lib', 'secur32.lib', 'crypt32.lib', 'bcrypt.lib', 'shlwapi.lib'

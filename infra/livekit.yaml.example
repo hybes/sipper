@@ -1,0 +1,20 @@
+# Copy outside the repository, mode 0600, owned by SIPPER_MEETING_UID/GID.
+# Use the same API key/secret as the portal. Generate your own separate values.
+port: 7880
+bind_addresses: [0.0.0.0]
+rtc:
+  tcp_port: 7882
+  udp_port: 7883
+  use_external_ip: false
+  node_ip: replace-with-the-host-public-ip
+keys:
+  replace-with-meeting-api-key: replace-with-a-random-secret-of-at-least-32-characters
+room:
+  auto_create: false
+  max_participants: 100
+  enable_remote_unmute: false
+logging:
+  level: warn
+# TURN/TLS on a separate public hostname/port is required for restrictive
+# networks. Configure its certificate and listener before public acceptance.
+# https://docs.livekit.io/transport/self-hosting/deployment/

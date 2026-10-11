@@ -1,0 +1,263 @@
+import { after, test } from 'node:test'
+import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
+import { getPool, rows } from '../server/lib/db'
+import * as platform from '../server/lib/platform'
+import { gatewayFixture } from './gateway-fixture'
+import { admitGatewayOutgoing, gatewayHeartbeat, gatewayUpstreams, requireGatewayController, releaseGatewayController, recordGatewayRegistrations, recordUpstreamRegistrations } from '../server/lib/gateway'
+import { incomingGatewayCall, gatewayCall } from '../server/lib/mobile-calls'
+import { setCallingPreference, reportDevice } from '../server/lib/devices'
+
+process.env.SIPPER_GATEWAY_ID = `fixture-${randomUUID()}`
+process.env.SIPPER_GATEWAY_PUBLIC_HOST = 'localhost'
+after(async () => getPool().end())
+const denied = (code: string) => (error: any) => error.code === code
+
+test('gateway activity cannot be fabricated through app-reported direct call counts', async t => {
+  const f = await gatewayFixture(); t.after(f.cleanup)
+  const config = await platform.provisionDevice(f.actor, f.devices[0]!.id)
+  await assert.rejects(reportDevice(f.actor, f.devices[0]!.id, { appliedRevision: config.revision,
+    directCalls: [{ accountId: config.accounts[0]!.id, ringing: 1, dialling: 0, connected: 0, held: 0 }] }), denied('invalid_call_report'))
+  await reportDevice(f.actor, f.devices[0]!.id, { appliedRevision: config.revision, directCalls: [] })
+})
+
+test('Do Not Disturb preserves gateway credentials, registration routes and outgoing calls', async t => {
+  const f = await gatewayFixture(); t.after(f.cleanup)
+  const before = await platform.provisionDevice(f.actor, f.devices[0]!.id)
+  await setCallingPreference(f.actor, f.organisation, { doNotDisturb: true })
+  const after = await platform.provisionDevice(f.actor, f.devices[0]!.id)
+  assert.equal(after.revision, before.revision); assert.deepEqual(after.accounts, before.accounts)
+  const endpoint = after.accounts[0]!.settings.username
+  assert.ok((await gatewayUpstreams(f.nodeId)).endpoints.includes(endpoint))
+  const callId = randomUUID()
+  await admitGatewayOutgoing(f.nodeId, { callId, endpoint, destination: '*97' })
+  assert.equal((await gatewayCall(f.nodeId, callId, { event: 'connected', deviceId: f.devices[0]!.id })).state, 'answered')
+  await setCallingPreference(f.actor, f.organisation, { doNotDisturb: false })
+  await setCallingPreference(f.actor, f.organisation, { doNotDisturb: true })
+  assert.equal((await gatewayCall(f.nodeId, callId)).state, 'answered')
+})
+
+test('direct Do Not Disturb is provisioned per person and changes the acknowledged policy revision', async t => {
+  const f = await gatewayFixture(); t.after(f.cleanup)
+  const direct = await platform.createConfiguration(f.actor, f.organisation, { label: 'Direct fixture', mode: 'direct', password: 'fictional-direct-secret',
+    settings: { username: '1002', domain: 'pbx.example.invalid', server: 'sip.example.invalid' } })
+  await platform.assignConfiguration(f.actor, f.organisation, direct.id, f.actor.userId)
+  const before = await platform.provisionDevice(f.actor, f.devices[0]!.id)
+  assert.equal(before.accounts.find(a => a.id === direct.id)!.doNotDisturb, false)
+  await setCallingPreference(f.actor, f.organisation, { doNotDisturb: true })
+  const after = await platform.provisionDevice(f.actor, f.devices[0]!.id)
+  assert.notEqual(after.revision, before.revision)
+  assert.deepEqual(after.accounts.find(a => a.mode === 'gateway'), before.accounts.find(a => a.mode === 'gateway'))
+  assert.deepEqual(after.accounts.find(a => a.id === direct.id), { ...before.accounts.find(a => a.id === direct.id), doNotDisturb: true })
+  assert.equal((await platform.provisionDevice(f.actor, f.devices[1]!.id)).accounts.find(a => a.id === direct.id)!.doNotDisturb, true)
+  await assert.rejects(reportDevice(f.actor, f.devices[0]!.id, { appliedRevision: before.revision, registrations: [] }), denied('configuration_changed'))
+  await reportDevice(f.actor, f.devices[0]!.id, { appliedRevision: after.revision, registrations: [] })
+  await setCallingPreference(f.actor, f.organisation, { doNotDisturb: false })
+  const restored = await platform.provisionDevice(f.actor, f.devices[0]!.id)
+  assert.equal(restored.revision, before.revision); assert.deepEqual(restored.accounts, before.accounts)
+})
+
+test('upstream registration observations are tenant, revision, order and controller scoped', async t => {
+  const f = await gatewayFixture(); t.after(f.cleanup)
+  const instanceId = randomUUID(), report = { configurationId: f.configuration.id, revision: 1, state: 'registered', observedAt: new Date().toISOString() }
+  let heartbeat = await gatewayHeartbeat(f.nodeId, { instanceId, ready: true })
+  const record = (reports = [report], instance = instanceId, generation = heartbeat.registrationGeneration) => recordUpstreamRegistrations(f.nodeId, instance, { reports, registrationGeneration: generation })
+  const details = () => platform.organisationDetails(f.actor, f.organisation)
+  await assert.rejects(record([report], randomUUID()), denied('gateway_lease_lost'))
+  await assert.rejects(record([report, { ...report, configurationId: report.configurationId.toUpperCase() }]), denied('invalid_registration_observation'))
+  await assert.rejects(record([{ ...report, state: 'invented' }]))
+  for (const delta of [-60_000, 60_000]) await assert.rejects(record([{ ...report, observedAt: new Date(Date.now() + delta).toISOString() }]), denied('invalid_registration_observation'))
+  await record([{ ...report, revision: 2 }]); assert.deepEqual((await details()).upstreamRegistrations, [])
+  await record()
+  await record([{ ...report, state: 'failed', observedAt: new Date(Date.parse(report.observedAt) - 1).toISOString() }])
+  const observed = (await details()).upstreamRegistrations[0]!
+  assert.equal(observed.state, 'registered'); assert.equal(observed.source, 'gateway'); assert.equal(observed.ready, true)
+  assert.ok(!JSON.stringify(observed).includes('never-send-upstream-secret'))
+  const other = await platform.createOrganisation(f.actor, f.workspace, { name: 'Other customer' })
+  assert.deepEqual((await platform.organisationDetails(f.actor, other.id)).upstreamRegistrations, [])
+  await gatewayHeartbeat(f.nodeId, { instanceId, ready: false })
+  assert.equal((await details()).upstreamRegistrations[0]!.ready, false)
+  await assert.rejects(record(), denied('gateway_not_ready'))
+  const previousGeneration = heartbeat.registrationGeneration
+  heartbeat = await gatewayHeartbeat(f.nodeId, { instanceId, ready: true })
+  assert.notEqual(heartbeat.registrationGeneration, previousGeneration)
+  assert.equal((await details()).upstreamRegistrations[0]!.ready, false)
+  assert.equal((await details()).upstreamRegistrations[0]!.readyUntil, null)
+  await assert.rejects(record([report], instanceId, previousGeneration), denied('registration_generation_changed'))
+  // A new snapshot wins across generations even if the gateway clock moved back.
+  await record([{ ...report, state: 'unregistered', observedAt: new Date(Date.parse(report.observedAt) - 2).toISOString() }])
+  assert.equal((await details()).upstreamRegistrations[0]!.state, 'unregistered')
+  assert.equal((await details()).upstreamRegistrations[0]!.ready, true)
+  assert.equal((await gatewayHeartbeat(f.nodeId, { instanceId, ready: true })).registrationGeneration, heartbeat.registrationGeneration)
+  await getPool().query("UPDATE gateway_nodes SET controller_expires_at=now()-interval '1 second' WHERE id=$1", [f.nodeId])
+  const replacement = randomUUID()
+  heartbeat = await gatewayHeartbeat(f.nodeId, { instanceId: replacement, ready: true })
+  await assert.rejects(record(), denied('gateway_lease_lost'))
+  assert.equal((await details()).upstreamRegistrations[0]!.ready, false)
+  await record([{ ...report, state: 'failed' }], replacement)
+  assert.equal((await details()).upstreamRegistrations[0]!.state, 'failed')
+  await getPool().query('UPDATE sip_configurations SET revision=revision+1 WHERE id=$1', [f.configuration.id])
+  await record([report], replacement); assert.deepEqual((await details()).upstreamRegistrations, [])
+  await record([{ ...report, revision: 2, observedAt: new Date(Date.parse(report.observedAt) - 2).toISOString() }], replacement)
+  assert.equal((await details()).upstreamRegistrations[0]!.state, 'registered')
+  await getPool().query("UPDATE sip_configurations SET mode='direct' WHERE id=$1", [f.configuration.id])
+  assert.deepEqual((await details()).upstreamRegistrations, [])
+})
+
+test('gateway observations are scoped, ordered, lease-bound and reset when credentials rotate', async t => {
+  const f = await gatewayFixture(); t.after(f.cleanup)
+  const config = await platform.provisionDevice(f.actor, f.devices[0]!.id)
+  const endpoint = config.accounts[0]!.settings.username, instanceId = randomUUID()
+  let heartbeat = await gatewayHeartbeat(f.nodeId, { instanceId, ready: true })
+  assert.deepEqual((await gatewayUpstreams(f.nodeId)).endpoints, [endpoint])
+  const report = { endpoint, state: 'registered', ip: '2001:db8::1', observedAt: new Date().toISOString() }
+  const record = (reports = [report], instance = instanceId, generation = heartbeat.registrationGeneration) => recordGatewayRegistrations(f.nodeId, instance, { reports, registrationGeneration: generation })
+  await assert.rejects(record([report], randomUUID()), denied('gateway_lease_lost'))
+  await assert.rejects(record([{ ...report, ip: 'not-an-ip' }]))
+  await assert.rejects(record([report, report]), denied('invalid_registration_observation'))
+  await assert.rejects(record([{ ...report, observedAt: new Date(Date.now() - 60_000).toISOString() }]), denied('invalid_registration_observation'))
+  await record()
+  await record([{ ...report, state: 'unregistered', ip: null as any, observedAt: new Date(Date.parse(report.observedAt) - 1).toISOString() }])
+  const details = () => platform.organisationDetails(f.actor, f.organisation)
+  const observation = (await details()).gatewayRegistrations[0]!
+  assert.equal(observation.state, 'registered'); assert.equal(observation.ip, '2001:db8::1')
+  assert.equal(observation.device_id, f.devices[0]!.id)
+  assert.ok(observation.readyUntil)
+  assert.equal(observation.ready, true)
+  assert.ok(!JSON.stringify(observation).includes(endpoint))
+  await gatewayHeartbeat(f.nodeId, { instanceId, ready: false })
+  assert.equal((await details()).gatewayRegistrations[0]!.ready, false)
+  await assert.rejects(record(), denied('gateway_not_ready'))
+  await requireGatewayController(f.nodeId, instanceId)
+  const previousGeneration = heartbeat.registrationGeneration
+  heartbeat = await gatewayHeartbeat(f.nodeId, { instanceId, ready: true })
+  assert.notEqual(heartbeat.registrationGeneration, previousGeneration)
+  assert.equal((await details()).gatewayRegistrations[0]!.ready, false)
+  assert.equal((await details()).gatewayRegistrations[0]!.readyUntil, null)
+  assert.equal((await details()).gatewayRegistrations[0]!.ip, report.ip)
+  await assert.rejects(record([report], instanceId, previousGeneration), denied('registration_generation_changed'))
+  await record([{ ...report, state: 'unregistered', ip: null as any, observedAt: new Date(Date.parse(report.observedAt) - 2).toISOString() }])
+  assert.equal((await details()).gatewayRegistrations[0]!.ready, true)
+  assert.equal((await details()).gatewayRegistrations[0]!.state, 'unregistered')
+  // A missed heartbeat can expire readiness without an explicit ready:false.
+  for (const field of ['ready_until', 'controller_expires_at']) {
+    const expiredGeneration = heartbeat.registrationGeneration
+    await getPool().query(`UPDATE gateway_nodes SET ${field}=now()-interval '1 second' WHERE id=$1`, [f.nodeId])
+    heartbeat = await gatewayHeartbeat(f.nodeId, { instanceId, ready: true })
+    assert.notEqual(heartbeat.registrationGeneration, expiredGeneration)
+    assert.equal((await details()).gatewayRegistrations[0]!.ready, false)
+    await assert.rejects(record([report], instanceId, expiredGeneration), denied('registration_generation_changed'))
+    await record()
+    assert.equal((await details()).gatewayRegistrations[0]!.ready, true)
+  }
+  const other = await platform.createOrganisation(f.actor, f.workspace, { name: 'Other customer' })
+  assert.deepEqual((await platform.organisationDetails(f.actor, other.id)).gatewayRegistrations, [])
+  await getPool().query("UPDATE gateway_nodes SET controller_expires_at=now()-interval '1 second' WHERE id=$1", [f.nodeId])
+  await assert.rejects(record(), denied('gateway_lease_lost'))
+  const replacement = randomUUID()
+  heartbeat = await gatewayHeartbeat(f.nodeId, { instanceId: replacement, ready: true })
+  assert.equal((await details()).gatewayRegistrations[0]!.readyUntil, null)
+  await assert.rejects(record(), denied('gateway_lease_lost'))
+  await record([report], replacement)
+  await getPool().query("UPDATE gateway_nodes SET host='replacement.invalid' WHERE id=$1", [f.nodeId])
+  assert.deepEqual((await details()).gatewayRegistrations, [])
+  await platform.provisionDevice(f.actor, f.devices[0]!.id)
+  assert.equal((await details()).gatewayRegistrations[0]!.observedAt, null)
+})
+
+test('gateway provisioning separates device secrets, is race safe, and never exposes upstream connection details', async t => {
+  const f = await gatewayFixture(); t.after(f.cleanup)
+  const [a, again, b] = await Promise.all([
+    platform.provisionDevice(f.actor, f.devices[0]!.id), platform.provisionDevice(f.actor, f.devices[0]!.id), platform.provisionDevice(f.actor, f.devices[1]!.id),
+  ])
+  assert.deepEqual(a.accounts, again.accounts)
+  assert.equal(a.revision, again.revision)
+  assert.notEqual(a.accounts[0]!.password, b.accounts[0]!.password)
+  assert.notEqual(a.accounts[0]!.settings.username, b.accounts[0]!.settings.username)
+  for (const text of ['never-send-upstream-secret', 'pbx.example.invalid', 'sip.example.invalid', 'upstream-auth']) assert.ok(!JSON.stringify(a).includes(text))
+  assert.notEqual(a.accounts[0]!.settings.username, '1001')
+  assert.equal(a.accounts[0]!.settings.transport, 'tls')
+  assert.equal(a.accounts[0]!.settings.srtp, 'required')
+  assert.equal(a.accounts[0]!.settings.useICE, true)
+  assert.equal((await rows('SELECT ice_support FROM gateway_ps_endpoints WHERE id=$1', [a.accounts[0]!.settings.username]))[0]!.ice_support, 'yes')
+  const credentials = await rows('SELECT * FROM gateway_credentials WHERE device_id=$1', [f.devices[0]!.id])
+  assert.ok(!JSON.stringify(credentials).includes(a.accounts[0]!.password))
+  const admin = JSON.stringify(await platform.organisationDetails(f.actor, f.organisation))
+  assert.ok(!admin.includes(a.accounts[0]!.password))
+  await getPool().query("UPDATE gateway_nodes SET host='replacement.example.invalid' WHERE id=$1", [f.nodeId])
+  assert.equal((await rows('SELECT * FROM gateway_ps_auths WHERE id=$1', [a.accounts[0]!.settings.username])).length, 0)
+  const moved = await platform.provisionDevice(f.actor, f.devices[0]!.id)
+  assert.notEqual(moved.revision, a.revision)
+  assert.notEqual(moved.accounts[0]!.password, a.accounts[0]!.password)
+})
+
+test('SIP authentication views immediately withdraw suspension, licence, assignment, verification, revocation and readiness', async t => {
+  const f = await gatewayFixture(); t.after(f.cleanup)
+  const config = await platform.provisionDevice(f.actor, f.devices[0]!.id)
+  const username = config.accounts[0]!.settings.username
+  const visible = async (expected: number) => {
+    for (const table of ['gateway_ps_endpoints', 'gateway_ps_auths', 'gateway_ps_aors']) assert.equal((await rows(`SELECT id FROM ${table} WHERE id=$1`, [username])).length, expected, table)
+  }
+  await visible(1)
+  await platform.setMemberStatus(f.actor, f.organisation, f.actor.userId, 'suspended'); await visible(0)
+  await platform.setMemberStatus(f.actor, f.organisation, f.actor.userId, 'active'); await visible(1)
+  await platform.releaseSeat(f.actor, f.workspace, f.actor.userId); await visible(0)
+  await platform.assignSeat(f.actor, f.workspace, f.actor.userId); await visible(1)
+  await rows('DELETE FROM sip_assignments WHERE configuration_id=$1 RETURNING configuration_id', [f.configuration.id]); await visible(0)
+  await platform.assignConfiguration(f.actor, f.organisation, f.configuration.id, f.actor.userId); await visible(1)
+  await getPool().query('UPDATE auth_user SET "emailVerified"=false WHERE id=$1', [f.actor.userId]); await visible(0)
+  await getPool().query('UPDATE auth_user SET "emailVerified"=true WHERE id=$1', [f.actor.userId]); await visible(1)
+  await getPool().query("UPDATE gateway_nodes SET ready_until=now()-interval '1 second' WHERE id=$1", [f.nodeId]); await visible(0)
+  await assert.rejects(platform.provisionDevice(f.actor, f.devices[0]!.id), denied('gateway_not_ready'))
+  await getPool().query("UPDATE gateway_nodes SET ready_until=now()+interval '10 minutes' WHERE id=$1", [f.nodeId]); await visible(1)
+  await platform.revokeDevice(f.actor, f.organisation, f.devices[0]!.id); await visible(0)
+})
+
+test('gateway controller ownership and outgoing admission use current access and configuration', async t => {
+  const f = await gatewayFixture(); t.after(f.cleanup)
+  const instanceId = randomUUID()
+  await assert.rejects(requireGatewayController(f.nodeId, undefined), denied('gateway_lease_lost'))
+  await gatewayHeartbeat(f.nodeId, { instanceId, ready: false })
+  await requireGatewayController(f.nodeId, instanceId)
+  const other = randomUUID()
+  await assert.rejects(requireGatewayController(f.nodeId, other), denied('gateway_lease_lost'))
+  await releaseGatewayController(f.nodeId, other)
+  await requireGatewayController(f.nodeId, instanceId)
+  await assert.rejects(gatewayHeartbeat(f.nodeId, { instanceId: randomUUID(), ready: true }), denied('gateway_already_owned'))
+  await assert.rejects(platform.provisionDevice(f.actor, f.devices[0]!.id), denied('gateway_not_ready'))
+  await gatewayHeartbeat(f.nodeId, { instanceId, ready: true })
+  const config = await platform.provisionDevice(f.actor, f.devices[0]!.id)
+  const endpoint = config.accounts[0]!.settings.username
+  const admitted = await admitGatewayOutgoing(f.nodeId, { callId: randomUUID(), endpoint, destination: '*97' })
+  assert.equal(admitted.configurationId, f.configuration.id)
+  assert.equal(admitted.deviceId, f.devices[0]!.id)
+  await assert.rejects(admitGatewayOutgoing('other-gateway', { callId: randomUUID(), endpoint, destination: '*97' }), denied('managed_access_unavailable'))
+  await assert.rejects(admitGatewayOutgoing(f.nodeId, { callId: randomUUID(), endpoint, destination: '123@unapproved.example' }))
+  assert.equal((await gatewayUpstreams(f.nodeId)).accounts[0]!.password, 'never-send-upstream-secret-to-device')
+  await platform.setMemberStatus(f.actor, f.organisation, f.actor.userId, 'suspended')
+  await assert.rejects(admitGatewayOutgoing(f.nodeId, { callId: randomUUID(), endpoint, destination: '*97' }), denied('managed_access_unavailable'))
+  assert.equal((await gatewayUpstreams(f.nodeId)).accounts.length, 0)
+  await getPool().query("UPDATE gateway_nodes SET controller_expires_at=now()-interval '1 second' WHERE id=$1", [f.nodeId])
+  await assert.rejects(requireGatewayController(f.nodeId, instanceId), denied('gateway_lease_lost'))
+  await gatewayHeartbeat(f.nodeId, { instanceId: other, ready: true })
+  await releaseGatewayController(f.nodeId, instanceId)
+  await requireGatewayController(f.nodeId, other)
+  await releaseGatewayController(f.nodeId, other)
+  await assert.rejects(requireGatewayController(f.nodeId, other), denied('gateway_lease_lost'))
+  await gatewayHeartbeat(f.nodeId, { instanceId, ready: false })
+})
+
+test('a SIP answer claims only an eligible recipient and excludes the other answering device', async t => {
+  const f = await gatewayFixture(); t.after(f.cleanup)
+  await Promise.all(f.devices.map(d => platform.provisionDevice(f.actor, d.id)))
+  const callId = randomUUID()
+  await assert.rejects(incomingGatewayCall(f.nodeId, { callId, configurationId: f.configuration.id, configurationRevision: 999, caller: { name: '', number: '2001' } }), denied('gateway_account_changed'))
+  await Promise.all(Array.from({length:8},()=>incomingGatewayCall(f.nodeId, { callId, configurationId: f.configuration.id, configurationRevision: 1, caller: { name: '', number: '2001' } })))
+  assert.equal((await gatewayCall(f.nodeId, callId)).targets.length, 2)
+  await assert.rejects(gatewayCall(f.nodeId, callId, { event: 'answer', deviceId: randomUUID() }), denied('call_taken'))
+  const answers = await Promise.allSettled(f.devices.map(d => gatewayCall(f.nodeId, callId, { event: 'answer', deviceId: d.id })))
+  assert.equal(answers.filter(a => a.status === 'fulfilled').length, 1)
+  const state = await gatewayCall(f.nodeId, callId)
+  await gatewayCall(f.nodeId, callId, { event: 'connected', deviceId: state.winnerDeviceId })
+  assert.equal((await gatewayCall(f.nodeId, callId)).targets.length, 0)
+})

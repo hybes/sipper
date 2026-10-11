@@ -5,6 +5,7 @@ import { cleanError, confirmDialog, showMenu } from '../components.js';
 import { accountsIn, act, service } from '../store.js';
 
 export async function deleteAccountWithConfirmation(account) {
+  if (account.managed) return;
   const response = await confirmDialog({
     type: 'warning',
     message: `Delete ${displayLabel(account)}?`,
@@ -18,8 +19,9 @@ export async function deleteAccountWithConfirmation(account) {
 
 /** Offers to move a profile's accounts to each other profile, or to delete them with it. */
 export async function deleteProfileWithChoice(state, profile) {
+  if (profile.managed) return;
   const members = accountsIn(state, profile.id);
-  const others = state.profiles.filter((p) => p.id !== profile.id);
+  const others = state.profiles.filter((p) => !p.managed && p.id !== profile.id);
   if (members.length === 0) {
     const response = await confirmDialog({
       type: 'warning',
@@ -45,27 +47,25 @@ export async function deleteProfileWithChoice(state, profile) {
 }
 
 export function showAccountMenu(state, ui, account) {
-  const others = state.profiles.filter((p) => p.id !== account.profileID);
+  const others = state.profiles.filter((p) => !p.managed && p.id !== account.profileID);
   return showMenu([
     {
       label: 'Call from this account',
-      onSelect: () => {
-        act('setDialerAccount', account.id);
-        ui.navigate({ kind: 'dialer' });
-        ui.focusDialer();
-      },
+      onSelect: () => act('prepareNewCall', '', account.id),
     },
     { label: 'Call voicemail', onSelect: () => act('callVoicemail', account.id) },
     'separator',
     { label: 'Re-register', enabled: account.isEnabled, onSelect: () => act('reRegister', account.id) },
-    { label: account.isEnabled ? 'Disable' : 'Enable', onSelect: () => act('setAccountEnabled', account.id, !account.isEnabled) },
-    { label: 'Edit…', onSelect: () => ui.openDialog({ kind: 'editAccount', id: account.id }) },
-    others.length > 0 && {
+    !account.managed && { label: account.isEnabled ? 'Disable' : 'Enable', onSelect: () => act('setAccountEnabled', account.id, !account.isEnabled) },
+    !account.managed && { label: 'Edit…', onSelect: () => ui.openDialog({ kind: 'editAccount', id: account.id }) },
+    !account.managed && others.length > 0 && {
       label: 'Move to',
       submenu: others.map((profile) => ({ label: profile.name, onSelect: () => act('moveAccount', account.id, profile.id) })),
     },
     'separator',
-    { label: 'Delete…', onSelect: () => deleteAccountWithConfirmation(account) },
+    account.managed
+      ? { label: 'Managed accounts…', onSelect: () => ui.navigate({ kind: 'settings', tab: 'managed' }) }
+      : { label: 'Delete…', onSelect: () => deleteAccountWithConfirmation(account) },
   ]);
 }
 

@@ -9,15 +9,16 @@ const NEW_PROFILE = '__new__';
 
 export function ImportDialog() {
   const state = useAppState();
+  const personalProfiles = state.profiles.filter(p => !p.managed);
   const request = state.pendingImport;
   const [selected, setSelected] = useState(() => new Set(request.candidates
     .filter((candidate) => candidate.validationErrors.length === 0 && !candidate.existingAccountID)
     .map((candidate) => candidate.id)));
   const [profileChoice, setProfileChoice] = useState(() => {
-    const matching = request.profileName && state.profiles.find((p) => p.name.toLowerCase() === request.profileName.toLowerCase());
+    const matching = request.profileName && personalProfiles.find((p) => p.name.toLowerCase() === request.profileName.toLowerCase());
     if (matching) return matching.id;
-    if (request.profileName || state.profiles.length === 0) return NEW_PROFILE;
-    return state.profiles[0].id;
+    if (request.profileName || personalProfiles.length === 0) return NEW_PROFILE;
+    return personalProfiles[0].id;
   });
   const [newProfileName, setNewProfileName] = useState(request.profileName ?? '');
 
@@ -74,7 +75,7 @@ export function ImportDialog() {
       <div class="form-grid two">
         <${Field} label="Add to profile">
           <${Select} value=${profileChoice} onChange=${setProfileChoice}
-            options=${[...state.profiles.map((p) => ({ value: p.id, label: p.name })), { value: NEW_PROFILE, label: 'New profile' }]} />
+            options=${[...personalProfiles.map((p) => ({ value: p.id, label: p.name })), { value: NEW_PROFILE, label: 'New profile' }]} />
         </${Field}>
         ${profileChoice === NEW_PROFILE ? html`<${Field} label="Profile name">
           <${TextField} value=${newProfileName} onValue=${setNewProfileName} placeholder=${request.profileName ?? 'For example Office PBX'} />

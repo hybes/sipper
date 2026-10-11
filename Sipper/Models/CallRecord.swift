@@ -42,6 +42,7 @@ struct CallRecord: Identifiable, Codable, Hashable {
     var statusText: String
     /// Local path of the call recording, if one was made on this Mac.
     var recordingPath: String?
+    var isManaged: Bool
 
     init(id: UUID = UUID(),
          accountID: UUID,
@@ -55,7 +56,8 @@ struct CallRecord: Identifiable, Codable, Hashable {
          endedAt: Date? = nil,
          statusCode: Int = 0,
          statusText: String = "",
-         recordingPath: String? = nil) {
+         recordingPath: String? = nil,
+         isManaged: Bool = false) {
         self.id = id
         self.accountID = accountID
         self.direction = direction
@@ -69,11 +71,12 @@ struct CallRecord: Identifiable, Codable, Hashable {
         self.statusCode = statusCode
         self.statusText = statusText
         self.recordingPath = recordingPath
+        self.isManaged = isManaged
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, accountID, direction, outcome, remoteNumber, remoteName, remoteURI
-        case startedAt, connectedAt, endedAt, statusCode, statusText, recordingPath
+        case startedAt, connectedAt, endedAt, statusCode, statusText, recordingPath, isManaged
     }
 
     init(from decoder: Decoder) throws {
@@ -91,6 +94,7 @@ struct CallRecord: Identifiable, Codable, Hashable {
         statusCode = c.decode(.statusCode, default: 0)
         statusText = c.decode(.statusText, default: "")
         recordingPath = c.decodeOptional(.recordingPath)
+        isManaged = c.decode(.isManaged, default: false)
     }
 
     /// Talk time in seconds (zero when the call never connected).

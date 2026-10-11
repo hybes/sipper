@@ -1,7 +1,7 @@
 // Electron main process of Sipper for Windows. Starts the SIP engine and the app model, and owns
 // the windows, the notification-area icon, notifications, launch at login and link handling.
 
-import { app, dialog, Menu, safeStorage, systemPreferences } from 'electron';
+import { app, BrowserWindow, dialog, Menu, powerMonitor, safeStorage, session, shell, systemPreferences } from 'electron';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,11 +12,17 @@ import { BrowserHelper } from './browserHelper.js';
 import { EngineClient } from './engineClient.js';
 import { registerIPC } from './ipc.js';
 import { findLink, LinkTokens } from './links.js';
+import { ManagedClient, managedOrigin } from './managedClient.js';
+import { ManagedController } from './managedController.js';
+import { ManagedStorage } from './managedStorage.js';
+import { ManagedMeetingWindows } from './managedMeetingWindow.js';
+import { installMeetingMediaPermissions } from './meetingMediaPermissions.js';
+import { setupReference } from './managedSetupLink.js';
 import { CallNotifications } from './notifications.js';
 import { MemoryPasswordStore, SafeStoragePasswordStore } from './passwords.js';
 import { JSONStore } from './store.js';
 import { SipperTray } from './tray.js';
-import { createMainWindow, IncomingCallWindow } from './windows.js';
+import { createMainWindow, IncomingCallWindow, secureWebPreferences } from './windows.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const APP_ID = 'com.hybes.sipper';
@@ -54,6 +60,8 @@ function start() {
   let incoming = null;
   let tray = null;
   let notifications = null;
+  let managed = null;
+  let meetings = null;
   let quitting = false;
   let shutdownComplete = false;
 
@@ -76,6 +84,23 @@ function start() {
   const openLink = (link) => {
     if (!state) {
       queuedLinks.push(link);
+      return;
+    }
+    if (managed?.client.isCallback(link)) {
+      managed.client.handleCallback(link).then(() => {
+        showMainWindow();
+        sendToMain('navigate', { kind: 'settings', tab: 'managed' });
+      });
+      return;
+    }
+    if (/^sipper:\/\/setup(?:[/?#]|$)/i.test(link)) {
+      showMainWindow();
+      try {
+        setupReference(link, managed.client.origin);
+        sendToMain('navigate', { kind: 'settings', tab: 'managed', setupLink: link });
+      } catch {
+        dialog.showMessageBox(mainWindow, { type: 'error', message: 'This setup link is invalid or belongs to another Sipper server.' });
+      }
       return;
     }
     if (tokens.isToastLink(link)) {
@@ -105,7 +130,7 @@ function start() {
     event.preventDefault();
     tray?.destroy();
     incoming?.destroy();
-    state.shutdown().finally(() => {
+    Promise.resolve(meetings?.stop()).finally(() => { managed?.stop(); return state.shutdown(); }).finally(() => {
       shutdownComplete = true;
       app.quit();
     });
@@ -138,12 +163,48 @@ function start() {
             return 'unknown';
           }
         },
+        beforePhoneAudio: () => meetings?.closeForPhone(),
+        meetingOpen: () => Boolean(meetings?.entry),
       },
     });
     state.load();
+    powerMonitor.on('suspend', () => state.setSuspended(true));
+    powerMonitor.on('resume', () => state.setSuspended(false));
     state.log.append(`Sipper: version ${app.getVersion()} on ${os.type()} ${os.release()} (${process.arch})`);
 
+    const isolatedDevelopment = !app.isPackaged && Boolean(process.env.SIPPER_DATA_DIR);
+    const origin = managedOrigin(isolatedDevelopment ? process.env.SIPPER_MANAGED_SERVER : undefined, isolatedDevelopment);
+    let testSession = null;
+    const managedStore = isolatedDevelopment && process.env.SIPPER_TEST_PASSWORDS === 'memory'
+      ? { read: () => structuredClone(testSession), save: value => { testSession = structuredClone(value); }, clear: () => { testSession = null; } }
+      : new ManagedStorage(dataDir, safeStorage, origin);
+    managed = new ManagedController({
+      client: new ManagedClient({ origin, allowLocalDevelopment: isolatedDevelopment, store: managedStore, openBrowser: url => shell.openExternal(url) }),
+      state,
+      metadata: { name: os.hostname().slice(0, 120) || 'Windows computer', appVersion: app.getVersion(), osVersion: `${os.type()} ${os.release()}` },
+      clearMessages: () => notifications?.clearMessages(),
+      onMessage: hint => notifications?.showMessage(async () => {
+        if (!await managed.openMessage(hint)) return;
+        showMainWindow();
+        sendToMain('navigate', { kind: 'messages', notification: hint });
+      }),
+    });
+
     const preload = path.join(here, '..', 'preload', 'preload.cjs');
+    // The media page has its own non-persistent session and a grant-specific CSP.
+    const meetingSession = session.fromPartition('sipper-meetings');
+    meetings = new ManagedMeetingWindows({ client: managed.client, state, pageURL: pageURL('meeting.html'), createWindow: () => {
+      const win = new BrowserWindow({ width: 1000, height: 740, minWidth: 640, minHeight: 480, show: false,
+        title: 'Joining meeting · Sipper', icon: appIcon,
+        webPreferences: { ...secureWebPreferences(preload), session: meetingSession } });
+      win.webContents.on('will-navigate', event => event.preventDefault());
+      win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+      return win;
+    } });
+    handleAppScheme(appRoot, meetingSession.protocol, reference => meetings.policy(reference));
+    session.defaultSession.setPermissionCheckHandler(() => false);
+    session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+    installMeetingMediaPermissions(meetingSession, meetings);
     mainWindow = createMainWindow({
       preload,
       page: pageURL('index.html'),
@@ -202,6 +263,8 @@ function start() {
 
     registerIPC({
       state,
+      managed,
+      meetings,
       rendererBase: RENDERER_BASE,
       windows: () => ({ mainWindow, incoming }),
       notifications,
@@ -261,6 +324,7 @@ function start() {
     }
     systemPreferences.on?.('accent-color-changed', () => sendToMain('theme', { accent: systemPreferences.getAccentColor?.() }));
 
+    managed.start();
     state.startEngine().then(() => {
       for (const link of queuedLinks.splice(0)) openLink(link);
     });

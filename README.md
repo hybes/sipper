@@ -52,7 +52,7 @@ how it differs from the Mac app, development and releasing.
 ## Requirements
 
 - macOS 14 or newer on Apple Silicon (the vendored PJSIP is built for arm64).
-- Xcode 16 or newer (developed with Xcode 27) and XcodeGen (`brew install xcodegen`).
+- Xcode 16.3 or newer (developed with Xcode 27) and XcodeGen (`brew install xcodegen`).
 
 ## Building
 
@@ -66,6 +66,23 @@ make extension      # zips the Chrome extension into extension/dist
 
 `make project` regenerates `Sipper.xcodeproj` from `project.yml`; open the
 project in Xcode if you prefer to build there.
+
+The Apple SIP library includes a tracked CommonCrypto patch for SHA-256 digest
+authentication, alongside MD5. Changes to the build script or patch rebuild the
+cached library through `make pjsip`. Managed gateway calling is under development;
+its isolated Mac integration check is documented in [gateway/README.md](gateway/README.md).
+The shared Apple engine now supports gateway blind and attended transfers with
+current-access and captured-call checks. Its isolated Mac/iOS rehearsal verifies
+encrypted remote media continuing after the local transfer legs close. Shared
+gateway endpoint transfers remain disabled pending the remaining client and
+interoperability checks; no production capability is claimed by this local build.
+The Mac app observes network availability and sleep/wake, invalidates offline
+registration status and coalesces recovery through PJSIP without restarting the
+engine. The initial connected network snapshot does not trigger recovery, which
+would otherwise cancel a call placed just after launch. An offline startup still
+reports loss of connectivity and recovers when a route becomes available.
+Withdrawn managed accounts remain unavailable while established calls
+retain their dialogs. Physical network handover and sleep/wake still need device QA.
 
 ### Signing (and the Keychain prompts)
 
@@ -192,6 +209,32 @@ Then add `1001` / `secret` with domain `sipper.test`, server `127.0.0.1`, port
 `5070` in Sipper and dial `1002`. TLS is on port 5071 with a self-signed
 certificate (turn off Settings › Network › Verify TLS certificates to use it).
 
+## Consultation calls and transfers
+
+During a connected Mac call, choose **Add call** or press **⌘N** to open the dialler.
+It starts on the current call's account. Opening or cancelling the dialler does
+not hold the call; pressing **Call** waits for confirmed hold before placing the
+new call. A rejected hold retains the dialler draft and existing conversation.
+**Return to…** or Escape returns to the existing call without dialling.
+After the consultation connects, choose **Transfer → Connect with…** to join
+the two calls. Attended transfer requires both calls to use the same account.
+Account shortcuts and incoming dial links also open the dialler; links only
+prefill a destination and still require pressing **Call**.
+
+On Mac and iOS, **Merge calls** combines two connected calls on the same account into
+a three-way audio conversation. Sipper mixes the audio locally, so it must stay
+running; a PBX conference service is not required. Mute and Hold apply to both
+people. **Separate calls** keeps the selected person connected and holds the
+other. **Remove** ends just that person's call; **End conference** ends both.
+Transfer is available again after separating. iOS requests grouping, separation
+and call controls through CallKit; if resuming after separation is rejected,
+both calls stay on hold. CallKit system UI and physical audio still need device
+acceptance. Windows/Android conferencing is still being implemented.
+
+Hold, answer and resume wait for SIP acceptance and negotiated media. A four-second
+timeout reports the failure and keeps new calls, answers and resumes blocked until
+the pending change resolves or the call ends. End call stays available.
+
 ## Incoming calls and notifications
 
 Settings › General shows whether macOS allows Sipper to post notifications and
@@ -261,6 +304,14 @@ website/                sipper.dev: static site and its Cloudflare Worker
 windows/                Sipper for Windows: Electron app, PJSIP engine, installer (windows/README.md)
 .github/workflows/      Windows build, tests and installer
 ```
+
+## Managed platform (in development)
+
+The managed portal and Mac, Windows, iOS and Android integration are being built
+alongside the standalone apps. See the [platform plan](docs/MANAGED-PLATFORM.md),
+[implementation evidence](docs/IMPLEMENTATION-STATUS.md),
+[portal setup](portal/README.md) and [deployment/recovery guide](infra/README.md).
+These local implementations are not a public paid-service launch.
 
 ## Licences
 

@@ -1,0 +1,87 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+/* Shared with sipper.dev: icon teal, warm paper and green-grey surfaces. */
+@theme static {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --color-sipper-50: #eef8f7;
+  --color-sipper-100: #d8efec;
+  --color-sipper-200: #b3dfdb;
+  --color-sipper-300: #8fdcd9;
+  --color-sipper-400: #62c9c6;
+  --color-sipper-500: #268089;
+  --color-sipper-600: #1c7277;
+  --color-sipper-700: #145a5e;
+  --color-sipper-800: #22485a;
+  --color-sipper-900: #173b44;
+  --color-sipper-950: #0f2a30;
+  --color-stone-50: #fbfbf9;
+  --color-stone-100: #eef3f2;
+  --color-stone-200: #d8e0df;
+  --color-stone-300: #bfcfcd;
+  --color-stone-400: #a5b4b3;
+  --color-stone-500: #647674;
+  --color-stone-600: #4a5958;
+  --color-stone-700: #3d504f;
+  --color-stone-800: #2a3a3a;
+  --color-stone-900: #182425;
+  --color-stone-950: #0e1516;
+}
+:root {
+  --ui-primary: #1c7277;
+  --ui-success: #24734a;
+  --ui-warning: #8a5c0b;
+  --ui-bg: #ffffff;
+  --ui-bg-muted: #eef3f2;
+  --ui-bg-elevated: #eef3f2;
+  --ui-text: #132322;
+  --ui-text-highlighted: #132322;
+  --ui-text-muted: #4a5958;
+  --ui-border: #d8e0df;
+}
+.dark {
+  --ui-primary: #62c9c6;
+  --ui-success: #82cd9d;
+  --ui-warning: #e3bf6b;
+  --ui-bg: #182425;
+  --ui-bg-muted: #131e1f;
+  --ui-bg-elevated: #2a3a3a;
+  --ui-text: #e7eeed;
+  --ui-text-highlighted: #e7eeed;
+  --ui-text-muted: #a5b4b3;
+  --ui-border: #2a3a3a;
+}
+body { margin: 0; -webkit-font-smoothing: antialiased; }
+button, a, input, select { -webkit-tap-highlight-color: transparent; }
+
+@layer components {
+  .page-title { @apply text-2xl font-semibold tracking-tight text-highlighted sm:text-3xl; overflow-wrap: anywhere; }
+  .page-description { @apply mt-2 max-w-2xl text-sm leading-relaxed text-muted; }
+  .page-heading { @apply flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center; }
+  .table-panel { @apply overflow-hidden rounded-xl border border-default bg-default; }
+  .table-scroll { @apply relative overflow-auto; max-height: 65vh; }
+  .management-table { @apply w-full text-left text-sm; border-collapse: separate; border-spacing: 0; }
+  .management-table th { @apply border-b border-default bg-muted px-3 py-3 text-xs font-medium whitespace-nowrap text-muted; }
+  .management-table td { @apply border-b border-default px-3 py-3 align-middle; }
+  .management-table thead th { @apply sticky top-0 z-10; }
+  .management-table tr > :first-child { @apply sticky left-0 z-10; width: 1%; box-shadow: 1px 0 var(--ui-border); }
+  .management-table thead tr > :first-child { @apply z-20; }
+  .management-table tbody tr > :first-child { @apply bg-default; }
+  .management-table tr > :first-child :is(.table-person, .table-detail) { @apply max-w-44 sm:max-w-64; }
+  .management-table tbody tr:last-child td { border-bottom: 0; }
+  .management-table tbody tr:hover, .management-table tbody tr:hover > :first-child { background: color-mix(in srgb, var(--ui-primary) 3%, var(--ui-bg)); }
+  .management-table.has-selection tr > :first-child { width: 3rem; min-width: 3rem; max-width: 3rem; padding-inline: .75rem; }
+  .management-table.has-selection tr > :nth-child(2) { @apply sticky z-10; left: 3rem; box-shadow: 1px 0 var(--ui-border); }
+  .management-table.has-selection thead tr > :nth-child(2) { @apply z-20; }
+  .management-table.has-selection tbody tr > :nth-child(2) { @apply bg-default; }
+  .management-table.has-selection tbody tr:hover > :nth-child(2) { background: color-mix(in srgb, var(--ui-primary) 3%, var(--ui-bg)); }
+  .management-table.has-selection tr > :nth-child(2) :is(.table-person, .table-detail) { @apply max-w-36 sm:max-w-48; }
+  .table-person { @apply block max-w-64 truncate font-medium text-highlighted; }
+  .table-detail { @apply mt-1 block max-w-64 truncate text-xs text-muted; }
+  .table-empty { @apply px-6 py-12 text-center text-sm text-muted; }
+  .section-toolbar { @apply mb-4 flex flex-wrap items-center justify-between gap-3; }
+  .detail-list { @apply grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-x-4 gap-y-4 text-sm; }
+  .detail-list dt { @apply text-muted; }
+  .detail-list dd { overflow-wrap: anywhere; }
+}
+html.dark .text-stone-500 { color: var(--color-stone-400); }

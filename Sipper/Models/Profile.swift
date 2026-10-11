@@ -11,6 +11,8 @@ struct Profile: Identifiable, Codable, Hashable {
     var sortOrder: Int
     var createdAt: Date
     var updatedAt: Date
+    /// Runtime-only; this profile must not be persisted or uploaded to personal iCloud.
+    var managedOrganisationID: UUID? = nil
 
     init(id: UUID = UUID(),
          name: String,

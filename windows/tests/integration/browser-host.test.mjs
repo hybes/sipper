@@ -4,6 +4,7 @@
 
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -20,7 +21,7 @@ function startHost() {
   let buffer = Buffer.alloc(0);
   const replies = [];
   const waiting = [];
-  const links = [];
+  const links = createInterface({ input: child.stderr, crlfDelay: Infinity })[Symbol.asyncIterator]();
   child.stdout.on('data', (chunk) => {
     buffer = Buffer.concat([buffer, chunk]);
     while (buffer.length >= 4) {
@@ -32,7 +33,6 @@ function startHost() {
       else replies.push(reply);
     }
   });
-  child.stderr.on('data', (chunk) => links.push(...chunk.toString().split(/\r?\n/).filter(Boolean)));
 
   const sendRaw = (bytes) => {
     const header = Buffer.alloc(4);
@@ -41,7 +41,7 @@ function startHost() {
     return new Promise((resolve) => (replies.length > 0 ? resolve(replies.shift()) : waiting.push(resolve)));
   };
   return {
-    links,
+    link: async () => (await links.next()).value,
     send: (message) => sendRaw(Buffer.from(JSON.stringify(message))),
     sendRaw,
     close: () => new Promise((resolve) => {
@@ -51,7 +51,7 @@ function startHost() {
   };
 }
 
-test('sipper-browser-host answers pings and hands accounts over', { skip: !fs.existsSync(hostExecutable) && `no host at ${hostExecutable}` }, async (t) => {
+test('sipper-browser-host answers pings and hands accounts over', { skip: !fs.existsSync(hostExecutable) && `no host at ${hostExecutable}`, timeout: 10_000 }, async (t) => {
   const host = startHost();
   t.after(() => host.close());
   const { version } = JSON.parse(fs.readFileSync(path.join(windowsRoot, 'package.json'), 'utf8'));
@@ -68,7 +68,8 @@ test('sipper-browser-host answers pings and hands accounts over', { skip: !fs.ex
     ],
   };
   assert.deepEqual(await host.send({ type: 'add-accounts', payload }), { ok: true, type: 'queued', count: 2 });
-  const request = parseImportURL(host.links.at(-1));
+  // stdout's acknowledgement can arrive before the complete stderr line.
+  const request = parseImportURL(await host.link());
   assert.equal(request.provider, 'fusionpbx');
   assert.equal(request.profileName, 'pbx.example.com');
   assert.deepEqual(request.candidates.map((c) => c.password), ['p+/=ß&?#', 's3cret']);

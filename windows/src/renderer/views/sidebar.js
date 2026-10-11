@@ -51,12 +51,14 @@ function ProfileGroup({ profile, collapsed, onToggle }) {
   const ui = useUI();
   const members = accountsIn(state, profile.id);
   const selected = ui.selection.kind === 'profile' && ui.selection.id === profile.id;
-  const menu = () => showMenu([
+  const menu = () => showMenu(profile.managed ? [
+    { label: 'Managed accounts…', onSelect: () => ui.navigate({ kind: 'settings', tab: 'managed' }) },
+  ] : [
     { label: 'Add account…', onSelect: () => ui.openDialog({ kind: 'addAccount', profileID: profile.id }) },
     { label: 'Edit profile…', onSelect: () => ui.openDialog({ kind: 'editProfile', id: profile.id }) },
     { label: profile.isEnabled ? 'Disable profile' : 'Enable profile', onSelect: () => act('setProfileEnabled', profile.id, !profile.isEnabled) },
-    state.profiles.length > 1 && 'separator',
-    state.profiles.length > 1 && { label: 'Delete profile…', onSelect: () => deleteProfileWithChoice(state, profile) },
+    state.profiles.filter(p => !p.managed).length > 1 && 'separator',
+    state.profiles.filter(p => !p.managed).length > 1 && { label: 'Delete profile…', onSelect: () => deleteProfileWithChoice(state, profile) },
   ]);
 
   return html`<section class=${cx('profile-group', !profile.isEnabled && 'disabled', `tint-${profile.colorName}`)} aria-label=${profile.name}>
@@ -77,7 +79,7 @@ function ProfileGroup({ profile, collapsed, onToggle }) {
       <${IconButton} icon="more" label=${`${profile.name} options`} className="profile-more" onClick=${menu} />
     </div>
     ${collapsed ? null : html`<div class="profile-accounts">
-      ${members.length === 0
+      ${members.length === 0 && profile.managed ? html`<span class="caption sidebar-empty-add">No accounts assigned</span>` : members.length === 0
         ? html`<button type="button" class="sidebar-empty-add" onClick=${() => ui.openDialog({ kind: 'addAccount', profileID: profile.id })}>
             <${Icon} name="add" size=${12} />Add account
           </button>`
@@ -115,6 +117,7 @@ export function Sidebar() {
         <${NavItem} kind="dialer" icon="dialer" label="Dialer" />
         <${NavItem} kind="history" icon="history" label="History" badge=${state.unseenMissedCalls} />
         <${NavItem} kind="contacts" icon="contacts" label="Contacts" />
+        <${NavItem} kind="messages" icon="messages" label="Messages" />
       </div>
       ${state.profiles.map((profile) => html`<${ProfileGroup} key=${profile.id} profile=${profile}
         collapsed=${collapsed.has(profile.id)} onToggle=${() => toggle(profile.id)} />`)}

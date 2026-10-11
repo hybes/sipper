@@ -1,6 +1,6 @@
 # Sipper hand-off protocol
 
-This is the contract between the Sipper apps (Mac and Windows) and anything that
+This is the contract between the Sipper apps (Mac, Windows, iOS and Android) and anything that
 wants to add SIP accounts to them (the Chrome extension today, other tools later).
 Both sides implement exactly this document.
 
@@ -88,12 +88,12 @@ Field rules:
 |---|---|---|
 | `version` | yes | Always `1`. The app rejects other versions. |
 | `source.provider` | no | Free-form identifier of the scraper (`fusionpbx`, `manual`, …). |
-| `source.url` | no | Page the data came from. Shown in the import sheet only. |
-| `profile.name` | no | Suggested profile (account group). The app offers to reuse an existing profile with the same name or create it. |
+| `source.url` | no | Page the data came from. Shown only in the desktop import sheet; mobile does not display it. |
+| `profile.name` | no | Suggested desktop profile (account group). Desktop offers to reuse an existing profile with the same name or create it. |
 | `accounts[]` | yes, ≥ 1 | Accounts to add. |
 | `username` | yes | SIP user part (the extension number). |
 | `domain` | yes | SIP domain / realm used in the AoR (`sip:username@domain`) and REGISTER. |
-| `password` | yes | SIP auth password. Stored in the macOS Keychain, or on Windows encrypted with the Data Protection API; never on disk in clear. |
+| `password` | yes | SIP auth password. Stored in the Mac/iOS Keychain, Windows Data Protection API storage, or Android Keystore-backed encrypted storage; never on disk in clear. |
 | `authUsername` | no | Auth user if different from `username`. |
 | `server` | no | Registrar / outbound proxy host. Defaults to `domain`. When present the app registers to `domain` but sends traffic to `server`. |
 | `port` | no | Port on `server`. Default `5060`, or `5061` when `transport` is `tls`. |
@@ -116,6 +116,35 @@ An account is a duplicate when an existing account has the same `username` and
 rows: importing them replaces the password and connection fields but keeps the
 existing account id, profile, history and label unless the label was the
 default.
+
+## Mobile import
+
+iOS and Android accept the URL scheme and pasted links under **Accounts → Import
+accounts**. Native messaging remains desktop-only. Opening a link prepares a
+review; it does not save or register an account. The review shows the SIP identity,
+server, transport and media encryption without displaying passwords or the source
+URL. Links contain credentials: only share them with the intended recipient.
+Sipper does not upload the link to its management server.
+
+Mobile allows up to 16 personal accounts and 16 entries in one import. Duplicate
+rows within a payload, or identities matching more than one saved personal
+account, cannot be imported. Existing accounts start unselected. Confirming an
+update preserves its ID, history, custom label, enabled state and media/NAT
+security preferences. The complete selection is written atomically; a failed
+secure-storage write leaves existing accounts unchanged. A changed account list
+requires a fresh review, and accounts currently in a call cannot be updated.
+Managed accounts are never import destinations.
+
+New imports follow the desktop version-1 defaults: UDP, media encryption off and
+ICE off unless the protocol supplies a different transport. The review makes
+these settings visible before confirmation. Mobile validates SIP fields against
+its native account rules, so invalid addresses, control characters, excessive
+field lengths and unsupported settings are rejected. Android also bounds JSON
+nesting to 32 levels. Unknown fields do not grant managed ownership.
+
+Mobile does not create desktop profiles. Android ignores informational source,
+caller-ID and notes fields; iOS retains account source/caller-ID/notes metadata
+but does not expose a desktop-style profile or details editor.
 
 ## Example URL
 

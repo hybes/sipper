@@ -169,6 +169,8 @@ final class ModelCodableTests: XCTestCase {
         XCTAssertEqual(settings.defaultTransport, .tls)
         XCTAssertEqual(settings.sipLogLevel, 4, "wrong type falls back to the default")
         XCTAssertTrue(settings.showNotifications)
+        XCTAssertFalse(settings.messageNotifications, "Managed messages require a separate opt-in")
+        XCTAssertFalse(try decode(AppSettings.self, #"{"messageNotifications":"true"}"#).messageNotifications)
 
         let echo = try decode(AppSettings.self, #"{"echoMode":"bogus","echoCancellation":false}"#)
         XCTAssertEqual(echo.echoMode, AppSettings().echoMode, "an unknown echo mode (or the retired boolean key) falls back to the default")
@@ -182,6 +184,7 @@ final class ModelCodableTests: XCTestCase {
         settings.lastUsedAccountID = UUID()
         settings.localTLSPort = 5061
         settings.doNotDisturb = true
+        settings.messageNotifications = true
         XCTAssertEqual(try decoder.decode(AppSettings.self, from: encoder.encode(settings)), settings)
     }
 }

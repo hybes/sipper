@@ -70,6 +70,12 @@ test('call URIs for numbers, user@host and full URIs', () => {
   assert.equal(callURI(account({ transport: 'tcp' }), 'alice@other.example.com'), 'sip:alice@other.example.com');
   assert.equal(callURI(account(), 'sip:bob@x.example.com;transport=tls'), 'sip:bob@x.example.com;transport=tls');
   assert.equal(callURI(account(), '  SIPS:bob@x.example.com  '), 'SIPS:bob@x.example.com');
+  const gateway = { ...account({ transport: 'tls' }), managed: { mode: 'gateway' } };
+  assert.equal(callURI(gateway, '+44 (20) 1234-5678'), 'sip:+442012345678@pbx.example.com;transport=tls');
+  assert.match(callURI(gateway, '1'.repeat(128)), /^sip:1+@/);
+  for (const invalid of ['sip:2001@pbx.example.com;transport=tls', '2001@pbx.example.com', 'ABCD', 'hello123', '+', '1+2', '1'.repeat(129), '2001\r\nHeader: value']) {
+    assert.throws(() => callURI(gateway, invalid), /phone number/);
+  }
 });
 
 test('dial strings are normalised', () => {
@@ -130,6 +136,9 @@ test('decoding fills defaults and rejects records without identity', () => {
   assert.equal(settings.sipLogLevel, 4);
   assert.deepEqual(settings.codecs, [{ codecID: 'PCMU/8000/1', isEnabled: true }]);
   assert.equal(settings.echoMode, 'software');
+  assert.equal(settings.messageNotifications, false);
+  assert.equal(decodeSettings({ messageNotifications: 'true' }).messageNotifications, false);
+  assert.equal(decodeSettings({ messageNotifications: true }).messageNotifications, true);
   assert.deepEqual(decodeSettings(null, 'UA'), defaultSettings('UA'));
 });
 

@@ -1,10 +1,13 @@
 import Foundation
 import UserNotifications
+import SipperManaged
 
 protocol NotificationManagerDelegate: AnyObject {
     func notificationManager(_ manager: NotificationManager, didChooseAnswerFor callID: Int)
     func notificationManager(_ manager: NotificationManager, didChooseDeclineFor callID: Int)
     func notificationManagerDidRequestShowApp(_ manager: NotificationManager)
+    func notificationManager(_ manager: NotificationManager, didOpenMessage hint: ManagedMessageNotification)
+    func notificationManager(_ manager: NotificationManager, shouldPresentMessage hint: ManagedMessageNotification, completion: @escaping (Bool) -> Void)
 }
 
 /// Incoming and missed call notifications through UNUserNotificationCenter.
@@ -15,6 +18,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     static let missedCategory = "com.hybes.sipper.missed-call"
     static let answerAction = "answer"
     static let declineAction = "decline"
+    private static let messageID = "com.hybes.sipper.message"
 
     /// UNUserNotificationCenter only works inside an app bundle.
     let isAvailable: Bool = {
@@ -93,11 +97,32 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         center.add(request)
     }
 
+    func postMessage(_ hint: ManagedMessageNotification) {
+        guard let center else { return }
+        removeMessages()
+        let content = UNMutableNotificationContent()
+        content.title = "Sipper"; content.body = "New message"
+        content.userInfo = ["sipper": hint.payload]
+        center.add(UNNotificationRequest(identifier: Self.messageID, content: content, trigger: nil))
+    }
+
+    func removeMessages() {
+        center?.removeDeliveredNotifications(withIdentifiers: [Self.messageID])
+        center?.removePendingNotificationRequests(withIdentifiers: [Self.messageID])
+    }
+
     // MARK: UNUserNotificationCenterDelegate
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        if notification.request.identifier == Self.messageID {
+            guard let hint = ManagedMessageNotification.parse(apns: notification.request.content.userInfo), let delegate else {
+                completionHandler([]); return
+            }
+            delegate.notificationManager(self, shouldPresentMessage: hint) { allowed in completionHandler(allowed ? [.banner, .list] : []) }
+            return
+        }
         completionHandler([.banner, .list])
     }
 
@@ -106,7 +131,12 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         defer { completionHandler() }
         let info = response.notification.request.content.userInfo
-        if let callID = info["callID"] as? Int {
+        if response.notification.request.identifier == Self.messageID {
+            if response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+               let hint = ManagedMessageNotification.parse(apns: info, forRouting: true) {
+                delegate?.notificationManager(self, didOpenMessage: hint)
+            }
+        } else if let callID = info["callID"] as? Int {
             switch response.actionIdentifier {
             case Self.answerAction, UNNotificationDefaultActionIdentifier:
                 delegate?.notificationManager(self, didChooseAnswerFor: callID)

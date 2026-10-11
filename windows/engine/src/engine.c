@@ -22,6 +22,8 @@
 
 #ifdef _WIN32
 #  include <windows.h>
+#  include <iphlpapi.h>
+#  include <netioapi.h>
 #  include <fcntl.h>
 #  include <io.h>
 #else
@@ -115,6 +117,16 @@ static double now_ms(void) {
 #endif
 }
 
+static double monotonic_ms(void) {
+#ifdef _WIN32
+    return (double)GetTickCount64();
+#else
+    struct timespec value;
+    clock_gettime(CLOCK_MONOTONIC, &value);
+    return value.tv_sec * 1000.0 + value.tv_nsec / 1000000.0;
+#endif
+}
+
 /* ------------------------------------------------------------------------------------ */
 /* Output                                                                                */
 /* ------------------------------------------------------------------------------------ */
@@ -169,6 +181,7 @@ typedef struct {
     cJSON *result;
     char error[768];
     int failed;
+    int deferred;
 } reply_t;
 
 static void fail(reply_t *reply, const char *format, ...) {
@@ -222,6 +235,13 @@ typedef struct {
     char id[64];
     pjsua_acc_id acc;
     char *config; /* the account's JSON as last applied, to detect changes */
+    char *pending_config; /* defer managed credential changes until existing calls finish */
+    double managed_until; /* wall-clock milliseconds; zero means a personal account */
+    int gateway;
+    int managed_dnd; /* incoming direct calls only; separate from SIP registration settings */
+    int retiring;
+    double withdrawal_retry_at;
+    int registration_deferred;
 } account_slot;
 
 typedef enum { DIR_OUTGOING, DIR_INCOMING } call_direction;
@@ -232,8 +252,10 @@ typedef struct {
     call_direction direction;
     const char *state;
     char remote[512];
+    char gateway_call_id[37];
+    char caller_name[641];
+    char caller_number[641];
     int muted;
-    int hold_requested;
     int remote_hold;
     int active_media;
     pjsua_call_media_status media_status;
@@ -246,6 +268,22 @@ typedef struct {
     int last_code;
     char last_text[160];
     int ringback_active;
+    int transfer_state; /* 0 idle, 1 REFER source, 2 reserved consultation, 3 closing after success */
+    int transfer_peer;
+    double transfer_peer_started;
+    int transfer_end_pending;
+    char transfer_status[96];
+    int confirmed_hold;
+    int hold_pending;
+    int hold_reply_pending;
+    int hold_target;
+    int hold_sequence;
+    int hold_accepted;
+    double hold_request_id;
+    double hold_deadline;
+    char conference_id[64];
+    int conference_peer;
+    double conference_peer_started;
 } call_context;
 
 typedef struct {
@@ -256,14 +294,26 @@ typedef struct {
 } ringback_tone;
 
 static int running;
+static int network_available = 1, network_path_available = 1, network_suspended;
+static double network_recovery_at;
 static int null_audio;
+static char meeting_audio_reference[37];
+static pjsua_transport_id verified_tls = PJSUA_INVALID_ID;
+static double last_call_started;
+static unsigned long long conference_sequence;
+#ifdef SIPPER_TESTING
+static const char *test_ca_file;
+#endif
 static account_slot accounts[PJSUA_MAX_ACC];
 static call_context calls[PJSUA_MAX_CALLS];
+static void finish_hold(call_context *call, const char *error);
 static char *applied_stun; /* JSON array text of the STUN servers pjsua knows */
 static int stun_count;
 static ringback_tone ringback = { NULL, NULL, PJSUA_INVALID_ID, 0 };
 static char last_transport_error[320];
 static double last_transport_error_at;
+static void network_changed(void);
+static void observe_network(void);
 
 static account_slot *account_by_id(const char *id) {
     int i;
@@ -282,6 +332,52 @@ static account_slot *account_by_pj(pjsua_acc_id acc) {
     return NULL;
 }
 
+static int account_available(const account_slot *account) {
+    return account && account->used && !account->retiring && !account->pending_config &&
+           (account->managed_until == 0 || account->managed_until > now_ms());
+}
+
+static int account_has_calls(const account_slot *account) {
+    int i;
+    for (i = 0; i < PJSUA_MAX_CALLS; i++) {
+        if (calls[i].used && strcmp(calls[i].account_id, account->id) == 0) return 1;
+    }
+    return 0;
+}
+
+static int tls_uri(const char *value) {
+    pj_pool_t *pool = pjsua_pool_create("gateway-uri", 512, 512);
+    pj_str_t text;
+    pjsip_uri *parsed;
+    int valid = 0;
+    if (!pool) return 0;
+    pj_strdup2(pool, &text, value);
+    parsed = pjsip_parse_uri(pool, text.ptr, text.slen, 0);
+    if (parsed && PJSIP_URI_SCHEME_IS_SIP(parsed)) {
+        pjsip_sip_uri *uri = (pjsip_sip_uri *)pjsip_uri_get_uri(parsed);
+        valid = pj_stricmp2(&uri->transport_param, "tls") == 0 && pj_list_empty(&uri->header_param);
+    }
+    pj_pool_release(pool);
+    return valid;
+}
+
+static int gateway_destination(const account_slot *account, const char *uri) {
+    const char *number, *at;
+    const char *registrar;
+    cJSON *config;
+    int valid;
+    if (!account->gateway) return 1;
+    if (strncmp(uri, "sip:", 4) != 0) return 0;
+    number = uri + 4;
+    at = strchr(number, '@');
+    if (!at || at == number || at - number > 128 || strspn(number, "0123456789+*#") != (size_t)(at - number)) return 0;
+    config = cJSON_Parse(account->config);
+    registrar = param_str(config, "registrar", "");
+    valid = strncmp(registrar, "sip:", 4) == 0 && strcmp(at + 1, registrar + 4) == 0;
+    cJSON_Delete(config);
+    return valid;
+}
+
 static call_context *call_for(int call_id) {
     if (call_id < 0 || call_id >= PJSUA_MAX_CALLS || !calls[call_id].used) return NULL;
     return &calls[call_id];
@@ -298,7 +394,11 @@ static call_context *call_begin(pjsua_call_id call_id, const char *account_id, c
     call->conf_slot = PJSUA_INVALID_ID;
     call->recorder_id = PJSUA_INVALID_ID;
     call->recorder_slot = PJSUA_INVALID_ID;
+    call->transfer_peer = PJSUA_INVALID_ID;
+    call->conference_peer = PJSUA_INVALID_ID;
     call->started_at = now_ms();
+    if (call->started_at <= last_call_started) call->started_at = last_call_started + 1;
+    last_call_started = call->started_at;
     return call;
 }
 
@@ -309,11 +409,19 @@ static cJSON *call_json(int call_id, const call_context *call) {
     cJSON_AddStringToObject(object, "direction", call->direction == DIR_INCOMING ? "incoming" : "outgoing");
     cJSON_AddStringToObject(object, "state", call->state);
     cJSON_AddStringToObject(object, "remote", call->remote);
+    if (call->gateway_call_id[0]) {
+        cJSON_AddStringToObject(object, "gatewayCallId", call->gateway_call_id);
+        cJSON_AddStringToObject(object, "callerName", call->caller_name);
+        cJSON_AddStringToObject(object, "callerNumber", call->caller_number);
+    }
     cJSON_AddBoolToObject(object, "muted", call->muted);
-    cJSON_AddBoolToObject(object, "onHold", call->hold_requested || call->media_status == PJSUA_CALL_MEDIA_LOCAL_HOLD);
+    if (call->conference_id[0]) cJSON_AddStringToObject(object, "conferenceId", call->conference_id);
+    cJSON_AddBoolToObject(object, "onHold", call->media_status == PJSUA_CALL_MEDIA_LOCAL_HOLD || (call->confirmed_hold && call->media_status == PJSUA_CALL_MEDIA_NONE));
     cJSON_AddBoolToObject(object, "remoteHold", call->remote_hold);
     cJSON_AddBoolToObject(object, "activeMedia", call->active_media);
     cJSON_AddBoolToObject(object, "recording", call->recorder_id != PJSUA_INVALID_ID);
+    cJSON_AddBoolToObject(object, "transferring", call->transfer_state != 0);
+    cJSON_AddStringToObject(object, "transferStatus", call->transfer_status);
     cJSON_AddNumberToObject(object, "startedAt", call->started_at);
     if (call->connected_at > 0) cJSON_AddNumberToObject(object, "connectedAt", call->connected_at);
     else cJSON_AddNullToObject(object, "connectedAt");
@@ -330,8 +438,40 @@ static void emit_call(const char *event_name, int call_id, const call_context *c
     emit(event);
 }
 
+static void transfer_state(call_context *call, int state, const char *message) {
+    call->transfer_state = state;
+    copy_text(call->transfer_status, sizeof call->transfer_status, message, strlen(message));
+    emit_call("callChanged", (int)(call - calls), call);
+}
+
+static void release_transfer_peer(call_context *call, int success) {
+    call_context *peer = call_for(call->transfer_peer);
+    if (peer && peer->started_at == call->transfer_peer_started && peer->transfer_state == 2) {
+        peer->transfer_end_pending = success;
+        transfer_state(peer, success ? 3 : 0, success ? "Transfer completed" : "Transfer failed. Your call is still connected.");
+    }
+    call->transfer_peer = PJSUA_INVALID_ID;
+    call->transfer_peer_started = 0;
+}
+
+/* Run outside PJSIP callbacks. A reused slot is reset by call_begin and cannot inherit cleanup. */
+static void finish_transfers(void) {
+    int i;
+    if (!running) return;
+    for (i = 0; i < PJSUA_MAX_CALLS; i++) {
+        call_context *call = call_for(i);
+        if (!call || !call->transfer_end_pending) continue;
+        call->transfer_end_pending = 0;
+        if (pjsua_call_hangup(i, 0, NULL, NULL) != PJ_SUCCESS && call->used)
+            transfer_state(call, 0, "Transfer completed. Use End call to close the local call.");
+    }
+}
+
 static void emit_registration(const char *account_id, const char *state, int code, const char *reason, int expires) {
     cJSON *event = event_new("registration");
+    if (!network_available && account_available(account_by_id(account_id))) {
+        state = "failed"; code = 0; reason = "No network connection"; expires = 0;
+    }
     cJSON_AddStringToObject(event, "accountId", account_id);
     cJSON_AddStringToObject(event, "state", state);
     cJSON_AddNumberToObject(event, "code", code);
@@ -421,7 +561,15 @@ static void ringback_stop_for(call_context *call) {
 /* Media wiring and recording                                                             */
 /* ------------------------------------------------------------------------------------ */
 
+static call_context *conference_peer(call_context *call) {
+    call_context *peer = call_for(call->conference_peer);
+    return call->conference_id[0] && peer && peer->started_at == call->conference_peer_started &&
+        peer->conference_peer == (int)(call - calls) && peer->conference_peer_started == call->started_at &&
+        strcmp(peer->conference_id, call->conference_id) == 0 && strcmp(peer->account_id, call->account_id) == 0 ? peer : NULL;
+}
+
 static void apply_media_wiring(call_context *call) {
+    call_context *peer = conference_peer(call);
     pjsua_conf_port_id slot = call->conf_slot;
     if (slot == PJSUA_INVALID_ID) return;
     if (call->active_media) {
@@ -439,13 +587,53 @@ static void apply_media_wiring(call_context *call) {
         if (call->muted || !call->active_media) pjsua_conf_disconnect(0, call->recorder_slot);
         else pjsua_conf_connect(0, call->recorder_slot);
     }
+    if (peer && peer->conf_slot != PJSUA_INVALID_ID) {
+        int mix = call->active_media && peer->active_media && !call->hold_pending && !peer->hold_pending;
+        if (mix) {
+            pjsua_conf_connect(slot, peer->conf_slot);
+            pjsua_conf_connect(peer->conf_slot, slot);
+        } else {
+            pjsua_conf_disconnect(slot, peer->conf_slot);
+            pjsua_conf_disconnect(peer->conf_slot, slot);
+        }
+        if (call->recorder_slot != PJSUA_INVALID_ID) {
+            if (mix) pjsua_conf_connect(peer->conf_slot, call->recorder_slot);
+            else pjsua_conf_disconnect(peer->conf_slot, call->recorder_slot);
+        }
+        if (peer->recorder_slot != PJSUA_INVALID_ID) {
+            if (mix) pjsua_conf_connect(slot, peer->recorder_slot);
+            else pjsua_conf_disconnect(slot, peer->recorder_slot);
+        }
+    }
+}
+
+static void break_conference(call_context *call) {
+    call_context *peer = conference_peer(call);
+    if (peer) {
+        if (call->conf_slot != PJSUA_INVALID_ID && peer->conf_slot != PJSUA_INVALID_ID) {
+            pjsua_conf_disconnect(call->conf_slot, peer->conf_slot);
+            pjsua_conf_disconnect(peer->conf_slot, call->conf_slot);
+            if (call->recorder_slot != PJSUA_INVALID_ID) pjsua_conf_disconnect(peer->conf_slot, call->recorder_slot);
+            if (peer->recorder_slot != PJSUA_INVALID_ID) pjsua_conf_disconnect(call->conf_slot, peer->recorder_slot);
+        }
+        peer->conference_id[0] = '\0';
+        peer->conference_peer = PJSUA_INVALID_ID;
+        peer->conference_peer_started = 0;
+        apply_media_wiring(peer);
+        emit_call("callChanged", (int)(peer - calls), peer);
+    }
+    call->conference_id[0] = '\0';
+    call->conference_peer = PJSUA_INVALID_ID;
+    call->conference_peer_started = 0;
 }
 
 static void destroy_recorder(call_context *call) {
+    call_context *peer = conference_peer(call);
     if (call->recorder_id == PJSUA_INVALID_ID) return;
     if (call->recorder_slot != PJSUA_INVALID_ID) {
         if (call->conf_slot != PJSUA_INVALID_ID) pjsua_conf_disconnect(call->conf_slot, call->recorder_slot);
         pjsua_conf_disconnect(0, call->recorder_slot);
+        if (peer && peer->conf_slot != PJSUA_INVALID_ID) pjsua_conf_disconnect(peer->conf_slot, call->recorder_slot);
     }
     pjsua_recorder_destroy(call->recorder_id);
     call->recorder_id = PJSUA_INVALID_ID;
@@ -472,21 +660,65 @@ static void on_log(int level, const char *data, int length) {
     emit(event);
 }
 
+static int uuid_reference(const char *value, size_t length, char output[37]) {
+    size_t i;
+    if (!value || length != 36) return 0;
+    for (i = 0; i < 36; i++) {
+        char c = value[i];
+        if (i == 8 || i == 13 || i == 18 || i == 23) { if (c != '-') return 0; }
+        else if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) return 0;
+        output[i] = c >= 'A' && c <= 'F' ? c + ('a' - 'A') : c;
+    }
+    output[36] = '\0';
+    return 1;
+}
+
+/* A gateway offer must arrive on an outgoing verified TLS connection, with exactly
+ * one canonical UUID header. SIP From never supplies the displayed caller identity. */
+static int gateway_call_id(const pjsip_rx_data *data, char *output) {
+    const pjsip_generic_string_hdr *found = NULL;
+    const pjsip_hdr *header;
+    pj_str_t name = pjs("X-Sipper-Call-ID");
+    if (!data || !data->tp_info.transport || verified_tls == PJSUA_INVALID_ID ||
+        !(data->tp_info.transport->flag & PJSIP_TRANSPORT_SECURE) ||
+        data->tp_info.transport->dir != PJSIP_TP_DIR_OUTGOING || !data->msg_info.msg) return 0;
+    for (header = data->msg_info.msg->hdr.next; header != &data->msg_info.msg->hdr; header = header->next) {
+        if (pj_stricmp(&header->name, &name) != 0) continue;
+        if (found) return 0;
+        found = (const pjsip_generic_string_hdr *)header;
+    }
+    return found && uuid_reference(found->hvalue.ptr, (size_t)found->hvalue.slen, output);
+}
+
 static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id, pjsip_rx_data *rdata) {
     pjsua_call_info info;
     account_slot *account = account_by_pj(acc_id);
     call_context *call;
-    PJ_UNUSED_ARG(rdata);
-    if (!account) {
+    char reference[37] = "";
+    int i;
+    if (!account_available(account)) {
         pjsua_call_hangup(call_id, 480, NULL, NULL);
+        return;
+    }
+    if (account->managed_until != 0 && !account->gateway && account->managed_dnd) {
+        pjsua_call_hangup(call_id, 486, NULL, NULL);
         return;
     }
     if (pjsua_call_get_info(call_id, &info) != PJ_SUCCESS) {
         pjsua_call_hangup(call_id, 500, NULL, NULL);
         return;
     }
+    if (account->gateway) {
+        if (!gateway_call_id(rdata, reference)) { pjsua_call_hangup(call_id, 400, NULL, NULL); return; }
+        for (i = 0; i < PJSUA_MAX_CALLS; i++) {
+            if (calls[i].used && strcmp(calls[i].account_id, account->id) == 0 && strcmp(calls[i].gateway_call_id, reference) == 0) {
+                pjsua_call_hangup(call_id, 400, NULL, NULL); return;
+            }
+        }
+    }
     call = call_begin(call_id, account->id, DIR_INCOMING);
-    copy_text(call->remote, sizeof call->remote, info.remote_info.ptr, (size_t)info.remote_info.slen);
+    if (account->gateway) copy_text(call->gateway_call_id, sizeof call->gateway_call_id, reference, 36);
+    else copy_text(call->remote, sizeof call->remote, info.remote_info.ptr, (size_t)info.remote_info.slen);
     pjsua_call_answer(call_id, 180, NULL, NULL);
     emit_call("incomingCall", call_id, call);
 }
@@ -515,6 +747,7 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e) {
         }
         account = account_by_pj(info.acc_id);
         if (!account) return;
+        if (info.role != PJSIP_ROLE_UAC && account->gateway) return;
         call = call_begin(call_id, account->id, info.role == PJSIP_ROLE_UAC ? DIR_OUTGOING : DIR_INCOMING);
         copy_text(call->remote, sizeof call->remote, info.remote_info.ptr, (size_t)info.remote_info.slen);
     }
@@ -557,11 +790,51 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e) {
     }
 
     if (strcmp(call->state, "disconnected") == 0) {
+        call->active_media = 0;
+        break_conference(call);
+        finish_hold(call, "The call no longer exists.");
+        if (call->transfer_state == 1) release_transfer_peer(call, 0);
         destroy_recorder(call);
         emit_call("callEnded", call_id, call);
         call->used = 0;
     } else {
         emit_call("callChanged", call_id, call);
+    }
+}
+
+static void finish_hold(call_context *call, const char *error) {
+    cJSON *response;
+    if (!call->hold_pending) return;
+    if (!error && (!call->hold_accepted ||
+        (call->hold_target ? (call->media_status != PJSUA_CALL_MEDIA_LOCAL_HOLD && call->media_status != PJSUA_CALL_MEDIA_NONE) :
+         (call->media_status != PJSUA_CALL_MEDIA_NONE && call->media_status != PJSUA_CALL_MEDIA_ACTIVE && call->media_status != PJSUA_CALL_MEDIA_REMOTE_HOLD)))) return;
+    if (!error) {
+        /* Both parties holding produces NONE. This is confirmed negotiation, never a requested-state flag. */
+        call->confirmed_hold = call->hold_target;
+    }
+    call->hold_pending = 0;
+    apply_media_wiring(call);
+    emit_call("callChanged", (int)(call - calls), call);
+    if (!call->hold_reply_pending) return;
+    call->hold_reply_pending = 0;
+    response = cJSON_CreateObject();
+    cJSON_AddNumberToObject(response, "id", call->hold_request_id);
+    cJSON_AddBoolToObject(response, "ok", error == NULL);
+    if (error) cJSON_AddStringToObject(response, "error", error);
+    emit(response);
+}
+
+static void on_call_tsx_state(pjsua_call_id id, pjsip_transaction *tsx, pjsip_event *event) {
+    call_context *call = call_for(id);
+    char error[128];
+    if (!call || !call->hold_pending || tsx->role != PJSIP_ROLE_UAC || tsx->method.id != PJSIP_INVITE_METHOD) return;
+    if (tsx->state == PJSIP_TSX_STATE_CALLING) call->hold_sequence = tsx->cseq;
+    if (call->hold_sequence != tsx->cseq || tsx->state < PJSIP_TSX_STATE_COMPLETED || tsx->status_code < 200 ||
+        tsx->status_code == 401 || tsx->status_code == 407 || tsx->status_code == 422) return;
+    if (tsx->status_code < 300) { call->hold_accepted = 1; finish_hold(call, NULL); }
+    else {
+        snprintf(error, sizeof error, "The phone system rejected the hold change (SIP %d).", tsx->status_code);
+        finish_hold(call, error);
     }
 }
 
@@ -575,17 +848,20 @@ static void on_call_media_state(pjsua_call_id call_id) {
     call->active_media = info.media_status == PJSUA_CALL_MEDIA_ACTIVE ||
                          info.media_status == PJSUA_CALL_MEDIA_REMOTE_HOLD;
     call->remote_hold = info.media_status == PJSUA_CALL_MEDIA_REMOTE_HOLD;
-    if (info.media_status == PJSUA_CALL_MEDIA_LOCAL_HOLD) call->hold_requested = 1;
-    else if (info.media_status == PJSUA_CALL_MEDIA_ACTIVE) call->hold_requested = 0;
     if (call->active_media) ringback_stop_for(call);
     apply_media_wiring(call);
     emit_call("callChanged", call_id, call);
+    finish_hold(call, NULL);
 }
 
 static void on_reg_state2(pjsua_acc_id acc_id, pjsua_reg_info *info) {
     char reason[512];
     account_slot *account = account_by_pj(acc_id);
     if (!account) return;
+    if (!account_available(account)) {
+        emit_registration(account->id, "unregistered", 0, "Managed access unavailable", 0);
+        return;
+    }
 
     if (info && info->cbparam) {
         struct pjsip_regc_cbparam *param = info->cbparam;
@@ -649,17 +925,42 @@ static void on_mwi_info(pjsua_acc_id acc_id, pjsua_mwi_info *info) {
     emit(event);
 }
 
+static void on_call_transfer_request(pjsua_call_id call_id, const pj_str_t *destination, pjsip_status_code *code) {
+    call_context *call = call_for(call_id);
+    account_slot *account = call ? account_by_id(call->account_id) : NULL;
+    /* Gateway call legs must be admitted by the service, never by an unsolicited REFER. */
+    if (!account_available(account) || account->gateway) *code = PJSIP_SC_FORBIDDEN;
+}
+
+static void on_call_replace_request(pjsua_call_id call_id, pjsip_rx_data *rdata, int *code, pj_str_t *text) {
+    call_context *call = call_for(call_id);
+    account_slot *account = call ? account_by_id(call->account_id) : NULL;
+    if (!account_available(account) || account->gateway) {
+        *code = PJSIP_SC_FORBIDDEN;
+        *text = pjs("Managed access unavailable");
+    }
+}
+
 static void on_call_transfer_status(pjsua_call_id call_id, int code, const pj_str_t *text, pj_bool_t final,
                                     pj_bool_t *p_continue) {
-    char status_text[256] = "";
+    call_context *call = call_for(call_id);
+    int success = code >= 200 && code < 300, finished = code >= 200 || final;
     cJSON *event;
-    PJ_UNUSED_ARG(p_continue);
-    if (text) copy_text(status_text, sizeof status_text, text->ptr, (size_t)text->slen);
+    if (!call || call->transfer_state != 1) { *p_continue = PJ_FALSE; return; }
+    if (finished) {
+        *p_continue = PJ_FALSE;
+        release_transfer_peer(call, success);
+        call->transfer_end_pending = success;
+    }
+    transfer_state(call, finished ? (success ? 3 : 0) : 1,
+        !finished ? "Transferring…" : success ? "Transfer completed" : "Transfer failed. Your call is still connected.");
     event = event_new("transferStatus");
     cJSON_AddNumberToObject(event, "callId", call_id);
+    cJSON_AddStringToObject(event, "accountId", call->account_id);
+    cJSON_AddNumberToObject(event, "startedAt", call->started_at);
     cJSON_AddNumberToObject(event, "code", code);
-    cJSON_AddStringToObject(event, "text", status_text);
-    cJSON_AddBoolToObject(event, "final", final ? 1 : 0);
+    cJSON_AddStringToObject(event, "text", call->transfer_status);
+    cJSON_AddBoolToObject(event, "final", finished);
     emit(event);
 }
 
@@ -714,6 +1015,9 @@ static int create_transport(transport_kind kind, int port, int verify_tls, reply
     pjsua_transport_config_default(&config);
     config.port = (unsigned)(port > 0 && port <= 65535 ? port : 0);
     if (kind == TP_TLS) config.tls_setting.verify_server = verify_tls ? PJ_TRUE : PJ_FALSE;
+#ifdef SIPPER_TESTING
+    if (kind == TP_TLS && test_ca_file) config.tls_setting.ca_list_file = pjs(test_ca_file);
+#endif
 
     status = pjsua_transport_create(type, &config, &id);
     if (status != PJ_SUCCESS && config.port != 0) {
@@ -722,7 +1026,10 @@ static int create_transport(transport_kind kind, int port, int verify_tls, reply
         config.port = 0;
         status = pjsua_transport_create(type, &config, &id);
     }
-    if (status == PJ_SUCCESS) return 1;
+    if (status == PJ_SUCCESS) {
+        if (kind == TP_TLS && verify_tls) verified_tls = id;
+        return 1;
+    }
     if (kind == TP_UDP) {
         char operation[64];
         snprintf(operation, sizeof operation, "pjsua_transport_create(%s)", names[kind]);
@@ -740,7 +1047,7 @@ static void apply_audio_devices(const char *input, const char *output) {
     pj_status_t status;
     char message[256];
 
-    if (!running || null_audio) return;
+    if (!running || null_audio || meeting_audio_reference[0]) return;
     infos = (pjmedia_aud_dev_info *)calloc(count, sizeof *infos);
     if (!infos) return;
     if (pjsua_enum_aud_devs(infos, &count) != PJ_SUCCESS) {
@@ -764,6 +1071,37 @@ static void apply_audio_devices(const char *input, const char *output) {
     if (status != PJ_SUCCESS) {
         app_log("selecting audio devices failed: %s", pj_message(status, message, sizeof message));
     }
+}
+
+static void request_meeting_audio(const cJSON *params, reply_t *reply) {
+    const cJSON *enabled = cJSON_GetObjectItemCaseSensitive(params, "enabled");
+    const char *value = param_str(params, "reference", NULL);
+    char reference[37];
+    int i;
+    if (!cJSON_IsBool(enabled) || !value || !uuid_reference(value, strlen(value), reference)) {
+        fail(reply, "A valid meeting audio reference and boolean enabled value are required."); return;
+    }
+    if (meeting_audio_reference[0] && strcmp(reference, meeting_audio_reference) != 0) {
+        fail(reply, "Meeting audio belongs to another session."); return;
+    }
+    if (cJSON_IsTrue(enabled) && !meeting_audio_reference[0]) {
+        for (i = 0; i < PJSUA_MAX_CALLS; i++) {
+            const call_context *call = &calls[i];
+            if (!call->used) continue;
+            if (call->hold_pending || call->transfer_state ||
+                (!(strcmp(call->state, "confirmed") == 0 && call->confirmed_hold) &&
+                 !(strcmp(call->state, "incoming") == 0 && !call->active_media))) {
+                fail(reply, "Hold your phone calls before joining a meeting."); return;
+            }
+        }
+        if (running && !check(pjsua_set_null_snd_dev(), "release phone audio", reply)) return;
+        memcpy(meeting_audio_reference, reference, sizeof reference);
+    } else if (!cJSON_IsTrue(enabled) && meeting_audio_reference[0]) {
+        meeting_audio_reference[0] = '\0';
+        apply_audio_devices(param_str(params, "input", NULL), param_str(params, "output", NULL));
+    }
+    reply->result = cJSON_CreateObject();
+    cJSON_AddBoolToObject(reply->result, "claimed", meeting_audio_reference[0] != '\0');
 }
 
 static void apply_codecs(const cJSON *codecs) {
@@ -793,6 +1131,22 @@ static int engine_start(const cJSON *params, reply_t *reply) {
     pj_status_t status;
 
     if (running) return 1;
+    {
+        const cJSON *reference = cJSON_GetObjectItemCaseSensitive(params, "meetingAudioReference");
+        if (reference) {
+            char normalised[37];
+            if (cJSON_IsNull(reference)) meeting_audio_reference[0] = '\0';
+            else if (!cJSON_IsString(reference) || !uuid_reference(reference->valuestring, strlen(reference->valuestring), normalised)) {
+                fail(reply, "A valid meeting audio reference is required."); return 0;
+            } else memcpy(meeting_audio_reference, normalised, sizeof normalised);
+        }
+    }
+    network_suspended = param_bool(params, "suspended", network_suspended);
+    network_available = network_path_available && !network_suspended;
+    verified_tls = PJSUA_INVALID_ID;
+#ifdef SIPPER_TESTING
+    test_ca_file = param_str(params, "testCaFile", NULL);
+#endif
     if (!check(pjsua_create(), "pjsua_create", reply)) return 0;
 
     pjsua_config_default(&config);
@@ -816,9 +1170,12 @@ static int engine_start(const cJSON *params, reply_t *reply) {
     config.cb.on_incoming_call = &on_incoming_call;
     config.cb.on_call_state = &on_call_state;
     config.cb.on_call_media_state = &on_call_media_state;
+    config.cb.on_call_tsx_state = &on_call_tsx_state;
     config.cb.on_reg_state2 = &on_reg_state2;
     config.cb.on_mwi_info = &on_mwi_info;
     config.cb.on_call_transfer_status = &on_call_transfer_status;
+    config.cb.on_call_transfer_request = &on_call_transfer_request;
+    config.cb.on_call_replace_request = &on_call_replace_request;
     config.cb.on_transport_state = &on_transport_state;
 
     pjsua_logging_config_default(&log_config);
@@ -858,8 +1215,10 @@ static int engine_start(const cJSON *params, reply_t *reply) {
     }
 
     running = 1;
+    network_changed();
+    network_recovery_at = 0; /* Fresh listeners need no IP-change restart. */
     null_audio = param_bool(params, "nullAudio", 0);
-    if (null_audio) {
+    if (null_audio || meeting_audio_reference[0]) {
         pjsua_set_null_snd_dev();
     } else {
         apply_audio_devices(param_str(params, "inputDevice", NULL), param_str(params, "outputDevice", NULL));
@@ -876,11 +1235,13 @@ static void engine_stop(void) {
     int i;
     if (!running) return;
     running = 0;
+    network_recovery_at = 0;
     ringback_silence();
     pjsua_call_hangup_all();
     for (i = 0; i < PJSUA_MAX_CALLS; i++) {
         call_context *call = &calls[i];
         if (!call->used) continue;
+        finish_hold(call, "The SIP engine stopped.");
         destroy_recorder(call);
         call->state = "disconnected";
         call->ended_at = now_ms();
@@ -893,6 +1254,7 @@ static void engine_stop(void) {
     pjsua_destroy();
     for (i = 0; i < PJSUA_MAX_ACC; i++) {
         free(accounts[i].config);
+        free(accounts[i].pending_config);
         memset(&accounts[i], 0, sizeof accounts[i]);
     }
     free(applied_stun);
@@ -907,6 +1269,7 @@ static void engine_stop(void) {
 
 static void fill_account_config(pjsua_acc_config *config, const cJSON *account) {
     const char *srtp = param_str(account, "srtp", "disabled");
+    int gateway = param_bool(account, "gateway", 0);
     int reg_timeout = param_int(account, "regTimeout", 300);
     int use_stun = param_bool(account, "useStun", 0) && stun_count > 0;
 
@@ -916,7 +1279,8 @@ static void fill_account_config(pjsua_acc_config *config, const cJSON *account) 
     config->reg_retry_interval = 30;
     config->reg_first_retry_interval = 5;
     config->reg_delay_before_refresh = 5;
-    config->register_on_acc_add = PJ_TRUE;
+    config->register_on_acc_add = network_available ? PJ_TRUE : PJ_FALSE;
+    config->ip_change_cfg.hangup_calls = PJ_FALSE;
     config->mwi_enabled = PJ_TRUE;
     config->publish_enabled = PJ_FALSE;
     config->ka_interval = 15;
@@ -930,6 +1294,12 @@ static void fill_account_config(pjsua_acc_config *config, const cJSON *account) 
     config->cred_info[0].username = pjs(param_str(account, "authUsername", ""));
     config->cred_info[0].data_type = PJSIP_CRED_DATA_PLAIN_PASSWD;
     config->cred_info[0].data = pjs(param_str(account, "password", ""));
+    config->cred_info[0].algorithm_type = gateway ? PJSIP_AUTH_ALGORITHM_SHA256 : PJSIP_AUTH_ALGORITHM_MD5;
+    if (!gateway && pjsip_auth_is_algorithm_supported(PJSIP_AUTH_ALGORITHM_SHA256)) {
+        config->cred_info[1] = config->cred_info[0];
+        config->cred_info[1].algorithm_type = PJSIP_AUTH_ALGORITHM_SHA256;
+        config->cred_count = 2;
+    }
 
     config->proxy_cnt = 1;
     config->proxy[0] = pjs(param_str(account, "proxy", ""));
@@ -937,7 +1307,8 @@ static void fill_account_config(pjsua_acc_config *config, const cJSON *account) 
     if (strcmp(srtp, "mandatory") == 0) config->use_srtp = PJMEDIA_SRTP_MANDATORY;
     else if (strcmp(srtp, "optional") == 0) config->use_srtp = PJMEDIA_SRTP_OPTIONAL;
     else config->use_srtp = PJMEDIA_SRTP_DISABLED;
-    config->srtp_secure_signaling = 0;
+    config->srtp_secure_signaling = gateway ? 1 : 0;
+    if (gateway) config->transport_id = verified_tls;
 
     config->sip_stun_use = use_stun ? PJSUA_STUN_USE_DEFAULT : PJSUA_STUN_USE_DISABLED;
     config->media_stun_use = use_stun ? PJSUA_STUN_USE_DEFAULT : PJSUA_STUN_USE_DISABLED;
@@ -948,7 +1319,7 @@ static void fill_account_config(pjsua_acc_config *config, const cJSON *account) 
     config->vid_out_auto_transmit = PJ_FALSE;
 }
 
-static void add_account(const char *id, const cJSON *account, char *config_text) {
+static void add_account(const char *id, const cJSON *account, char *config_text, double managed_until) {
     pjsua_acc_config config;
     pjsua_acc_id acc = PJSUA_INVALID_ID;
     pj_status_t status;
@@ -971,13 +1342,17 @@ static void add_account(const char *id, const cJSON *account, char *config_text)
             copy_text(accounts[i].id, sizeof accounts[i].id, id, strlen(id));
             accounts[i].acc = acc;
             accounts[i].config = config_text;
+            accounts[i].managed_until = managed_until;
+            accounts[i].managed_dnd = param_bool(account, "managedDoNotDisturb", 0);
+            accounts[i].gateway = param_bool(account, "gateway", 0);
+            accounts[i].registration_deferred = !network_available;
             break;
         }
     }
     emit_registration(id, "registering", 0, "", 0);
 }
 
-static void modify_account(account_slot *slot, const cJSON *account, char *config_text) {
+static int modify_account(account_slot *slot, const cJSON *account, char *config_text) {
     pjsua_acc_config config;
     pj_status_t status;
     char message[256];
@@ -988,6 +1363,11 @@ static void modify_account(account_slot *slot, const cJSON *account, char *confi
     if (status == PJ_SUCCESS) {
         free(slot->config);
         slot->config = config_text;
+        slot->gateway = param_bool(account, "gateway", 0);
+        slot->retiring = 0;
+        slot->withdrawal_retry_at = 0;
+        slot->registration_deferred = !network_available;
+        if (network_available) pjsua_acc_set_registration(slot->acc, PJ_TRUE);
         emit_registration(slot->id, "registering", 0, "", 0);
     } else {
         pj_message(status, message, sizeof message);
@@ -995,6 +1375,7 @@ static void modify_account(account_slot *slot, const cJSON *account, char *confi
         emit_registration(slot->id, "failed", 0, message, 0);
         free(config_text);
     }
+    return status == PJ_SUCCESS;
 }
 
 static void remove_account(account_slot *slot) {
@@ -1008,8 +1389,66 @@ static void remove_account(account_slot *slot) {
     pjsua_acc_del(slot->acc);
     copy_text(id, sizeof id, slot->id, strlen(slot->id));
     free(slot->config);
+    free(slot->pending_config);
     memset(slot, 0, sizeof *slot);
     emit_registration(id, "unregistered", 0, "", 0);
+}
+
+/* Withdraw registration and admission immediately, but keep established SIP dialogs alive.
+ * Deletion and deferred updates run on the main loop, never inside a PJSIP callback. */
+static void retire_account(account_slot *slot) {
+    int i;
+    cJSON *account;
+    pjsua_acc_config config;
+    pj_status_t status = PJ_EINVAL;
+    if (slot->retiring && (!slot->withdrawal_retry_at || slot->withdrawal_retry_at > monotonic_ms())) return;
+    slot->retiring = 1;
+    account = slot->config ? cJSON_Parse(slot->config) : NULL;
+    if (account) {
+        pjsua_acc_config_default(&config);
+        fill_account_config(&config, account);
+        config.reg_uri = pjs("");
+        config.register_on_acc_add = PJ_FALSE;
+        status = pjsua_acc_modify(slot->acc, &config);
+        cJSON_Delete(account);
+    }
+    slot->withdrawal_retry_at = status == PJ_SUCCESS ? 0 : monotonic_ms() + 5000;
+    if (status != PJ_SUCCESS) {
+        pjsua_acc_set_registration(slot->acc, PJ_FALSE);
+        app_log("disabling managed registration failed; recovery waits for withdrawal (%d)", status);
+    }
+    for (i = 0; i < PJSUA_MAX_CALLS; i++) {
+        if (calls[i].used && calls[i].connected_at <= 0 && strcmp(calls[i].account_id, slot->id) == 0)
+            pjsua_call_hangup(i, 480, NULL, NULL);
+    }
+    emit_registration(slot->id, "unregistered", 0, "Managed access unavailable", 0);
+}
+
+static void maintain_managed_accounts(void) {
+    int i;
+    if (!running) return;
+    for (i = 0; i < PJSUA_MAX_ACC; i++) {
+        account_slot *slot = &accounts[i];
+        if (!slot->used || slot->managed_until == 0) continue;
+        if (slot->retiring && slot->withdrawal_retry_at) retire_account(slot);
+        if (slot->managed_until <= now_ms()) {
+            free(slot->pending_config);
+            slot->pending_config = NULL;
+            retire_account(slot);
+        }
+        if (account_has_calls(slot)) continue;
+        if (slot->pending_config) {
+            char *text = slot->pending_config;
+            cJSON *config = cJSON_Parse(text);
+            slot->pending_config = NULL;
+            if (!config || !modify_account(slot, config, text)) {
+                if (!config) free(text);
+                retire_account(slot);
+            }
+            cJSON_Delete(config);
+        }
+        if (slot->retiring) remove_account(slot);
+    }
 }
 
 static void update_stun_servers(const cJSON *stun) {
@@ -1060,7 +1499,12 @@ static void engine_sync_accounts(const cJSON *params, reply_t *reply) {
                 break;
             }
         }
-        if (!wanted) remove_account(&accounts[i]);
+        if (!wanted) {
+            free(accounts[i].pending_config);
+            accounts[i].pending_config = NULL;
+            if (accounts[i].managed_until != 0) retire_account(&accounts[i]);
+            else remove_account(&accounts[i]);
+        }
     }
 
     if (cJSON_IsArray(stun)) {
@@ -1073,13 +1517,57 @@ static void engine_sync_accounts(const cJSON *params, reply_t *reply) {
         const char *id = param_str(item, "id", NULL);
         account_slot *slot;
         char *text;
+        cJSON *config;
+        const cJSON *lease = cJSON_GetObjectItemCaseSensitive(item, "managedUntil");
+        const cJSON *gateway = cJSON_GetObjectItemCaseSensitive(item, "gateway");
+        const cJSON *dnd = cJSON_GetObjectItemCaseSensitive(item, "managedDoNotDisturb");
+        double managed_until = lease ? (cJSON_IsNumber(lease) ? lease->valuedouble : -1) : 0;
         if (!id || strlen(id) >= sizeof accounts[0].id) continue;
-        text = cJSON_PrintUnformatted(item);
-        if (!text) continue;
         slot = account_by_id(id);
-        if (!slot) add_account(id, item, text);
-        else if (!slot->config || strcmp(slot->config, text) != 0) modify_account(slot, item, text);
-        else free(text);
+        /* A malformed or missing lease cannot downgrade an existing managed account. */
+        if ((dnd && (!cJSON_IsBool(dnd) || !lease)) || (gateway && !cJSON_IsBool(gateway)) ||
+            (cJSON_IsTrue(gateway) && (!lease || verified_tls == PJSUA_INVALID_ID ||
+                !pjsip_auth_is_algorithm_supported(PJSIP_AUTH_ALGORITHM_SHA256) ||
+                strcmp(param_str(item, "srtp", ""), "mandatory") != 0 ||
+                !tls_uri(param_str(item, "registrar", "")) || !tls_uri(param_str(item, "proxy", "")))) ||
+            (lease && !(managed_until > now_ms() && managed_until <= now_ms() + 86460000)) ||
+            (slot && slot->managed_until != 0 && !lease)) {
+            if (slot) {
+                free(slot->pending_config);
+                slot->pending_config = NULL;
+                retire_account(slot);
+            }
+            continue;
+        }
+        config = cJSON_Duplicate(item, 1);
+        if (!config) continue;
+        cJSON_DeleteItemFromObjectCaseSensitive(config, "managedUntil");
+        cJSON_DeleteItemFromObjectCaseSensitive(config, "managedDoNotDisturb");
+        text = cJSON_PrintUnformatted(config);
+        cJSON_Delete(config);
+        if (!text) continue;
+        if (!slot) add_account(id, item, text, managed_until);
+        else {
+            slot->managed_until = managed_until;
+            slot->managed_dnd = cJSON_IsTrue(dnd);
+            free(slot->pending_config);
+            slot->pending_config = NULL;
+            if (!slot->config || strcmp(slot->config, text) != 0) {
+                if (managed_until != 0 && account_has_calls(slot)) {
+                    slot->pending_config = text;
+                    retire_account(slot);
+                } else if (!modify_account(slot, item, text) && managed_until != 0) retire_account(slot);
+            } else if (slot->retiring) modify_account(slot, item, text);
+            else free(text);
+        }
+    }
+    maintain_managed_accounts();
+    reply->result = cJSON_CreateObject();
+    {
+        cJSON *applied = cJSON_AddArrayToObject(reply->result, "appliedAccountIds");
+        for (i = 0; i < PJSUA_MAX_ACC; i++) {
+            if (account_available(&accounts[i])) cJSON_AddItemToArray(applied, cJSON_CreateString(accounts[i].id));
+        }
     }
 }
 
@@ -1094,10 +1582,97 @@ static void default_call_setting(pjsua_call_setting *setting) {
 }
 
 static call_context *require_call(const cJSON *params, const char *key, reply_t *reply) {
+    int other = strcmp(key, "otherCallId") == 0;
     const cJSON *item = cJSON_GetObjectItemCaseSensitive(params, key);
-    call_context *call = cJSON_IsNumber(item) ? call_for(item->valueint) : NULL;
+    const cJSON *started = cJSON_GetObjectItemCaseSensitive(params, other ? "otherStartedAt" : "expectedStartedAt");
+    const char *account = param_str(params, other ? "otherAccountId" : "accountId", NULL);
+    call_context *call = cJSON_IsNumber(item) && item->valuedouble == item->valueint ? call_for(item->valueint) : NULL;
+    if (call &&
+        ((started && (!cJSON_IsNumber(started) || started->valuedouble != call->started_at)) ||
+         (account && strcmp(account, call->account_id) != 0))) call = NULL;
     if (!call) fail(reply, "The call no longer exists.");
     return call;
+}
+
+static call_context *require_call_identity(const cJSON *params, const char *key, reply_t *reply) {
+    int other = strcmp(key, "otherCallId") == 0;
+    if (!cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(params, other ? "otherStartedAt" : "expectedStartedAt")) ||
+        !cJSON_IsString(cJSON_GetObjectItemCaseSensitive(params, other ? "otherAccountId" : "accountId"))) {
+        fail(reply, "A call identity is required."); return NULL;
+    }
+    return require_call(params, key, reply);
+}
+
+static call_context *require_conference(const cJSON *params, reply_t *reply) {
+    call_context *call = require_call_identity(params, "callId", reply);
+    if (!call) return NULL;
+    if (!call->conference_id[0] || strcmp(call->conference_id, param_str(params, "conferenceId", "")) != 0 || !conference_peer(call)) {
+        fail(reply, "This conference is no longer available."); return NULL;
+    }
+    return call;
+}
+
+static void request_begin_conference(const cJSON *params, reply_t *reply) {
+    call_context *call = require_call_identity(params, "callId", reply), *peer;
+    pj_status_t status;
+    if (!call) return;
+    peer = require_call_identity(params, "otherCallId", reply);
+    if (!peer) return;
+    if (call == peer || strcmp(call->account_id, peer->account_id) != 0 || !account_available(account_by_id(call->account_id))) {
+        fail(reply, "Choose two connected calls on the same active account."); return;
+    }
+    if (strcmp(call->state, "confirmed") != 0 || strcmp(peer->state, "confirmed") != 0 ||
+        call->conference_id[0] || peer->conference_id[0] || call->transfer_state || peer->transfer_state ||
+        call->hold_pending || peer->hold_pending || !call->active_media || !peer->active_media ||
+        call->conf_slot == PJSUA_INVALID_ID || peer->conf_slot == PJSUA_INVALID_ID) {
+        fail(reply, "Both calls must finish resuming before they can be merged."); return;
+    }
+    for (int i = 0; i < PJSUA_MAX_CALLS; i++) {
+        if (calls[i].used && &calls[i] != call && &calls[i] != peer && (calls[i].active_media || calls[i].hold_pending)) {
+            fail(reply, "Hold your other calls before merging."); return;
+        }
+    }
+    if (!check(pjsua_conf_connect(call->conf_slot, peer->conf_slot), "conference audio", reply)) return;
+    status = pjsua_conf_connect(peer->conf_slot, call->conf_slot);
+    if (!check(status, "conference audio", reply)) {
+        pjsua_conf_disconnect(call->conf_slot, peer->conf_slot); return;
+    }
+    /* Fresh on each merge, including regrouping the same native legs. This is not an auth token. */
+    snprintf(call->conference_id, sizeof call->conference_id, "%.0f:%llu", call->started_at, ++conference_sequence);
+    copy_text(peer->conference_id, sizeof peer->conference_id, call->conference_id, strlen(call->conference_id));
+    call->conference_peer = (int)(peer - calls); call->conference_peer_started = peer->started_at;
+    peer->conference_peer = (int)(call - calls); peer->conference_peer_started = call->started_at;
+    call->muted = peer->muted = call->muted || peer->muted;
+    apply_media_wiring(call); apply_media_wiring(peer);
+    emit_call("callChanged", (int)(call - calls), call); emit_call("callChanged", (int)(peer - calls), peer);
+    reply->result = call_json((int)(call - calls), call);
+}
+
+static void request_split_conference(const cJSON *params, reply_t *reply) {
+    call_context *call = require_conference(params, reply), *peer;
+    if (!call) return;
+    peer = conference_peer(call);
+    if (call->hold_pending || peer->hold_pending || call->active_media || peer->active_media) {
+        fail(reply, "Hold both participants before separating the conference."); return;
+    }
+    break_conference(call);
+    apply_media_wiring(call);
+    emit_call("callChanged", (int)(call - calls), call);
+}
+
+static void request_hangup_conference(const cJSON *params, reply_t *reply) {
+    call_context *call = require_conference(params, reply), *peer;
+    int peer_id;
+    double peer_started;
+    char peer_account[64];
+    if (!call) return;
+    peer = conference_peer(call);
+    peer_id = (int)(peer - calls); peer_started = peer->started_at;
+    copy_text(peer_account, sizeof peer_account, peer->account_id, strlen(peer->account_id));
+    if (!check(pjsua_call_hangup((int)(call - calls), 0, NULL, NULL), "conference hangup", reply)) return;
+    peer = call_for(peer_id);
+    if (peer && peer->started_at == peer_started && strcmp(peer->account_id, peer_account) == 0)
+        check(pjsua_call_hangup(peer_id, 0, NULL, NULL), "conference hangup", reply);
 }
 
 static void request_make_call(const cJSON *params, reply_t *reply) {
@@ -1112,10 +1687,14 @@ static void request_make_call(const cJSON *params, reply_t *reply) {
         fail(reply, "The SIP engine is not running.");
         return;
     }
-    if (!account) {
+    if (!account_available(account)) {
         fail(reply, "The account is not active.");
         return;
     }
+    for (int i = 0; i < PJSUA_MAX_CALLS; ++i) {
+        if (calls[i].hold_pending) { fail(reply, "The call is still updating. Try again."); return; }
+    }
+    if (!gateway_destination(account, uri)) { fail(reply, "Use a phone number on this gateway account."); return; }
     if (pjsua_verify_sip_url(uri) != PJ_SUCCESS && pjsua_verify_url(uri) != PJ_SUCCESS) {
         fail(reply, "\xE2\x80\x9C%s\xE2\x80\x9D is not a valid SIP address.", uri);
         return;
@@ -1127,7 +1706,10 @@ static void request_make_call(const cJSON *params, reply_t *reply) {
     }
     call = call_for(call_id);
     if (!call) {
-        if (!pjsua_call_is_active(call_id)) {
+        /* ICE prepares media asynchronously before there is an active INVITE.
+         * get_info also recognises that pending dialog; is_active does not. */
+        pjsua_call_info info;
+        if (pjsua_call_get_info(call_id, &info) != PJ_SUCCESS || info.state == PJSIP_INV_STATE_DISCONNECTED) {
             fail(reply, "The call ended before it started.");
             return;
         }
@@ -1142,29 +1724,90 @@ static void request_answer(const cJSON *params, reply_t *reply) {
     call_context *call = require_call(params, "callId", reply);
     pjsua_call_setting setting;
     int call_id;
+    int code = param_int(params, "code", 200);
     if (!call) return;
+    if (code >= 200 && code < 300) for (int i = 0; i < PJSUA_MAX_CALLS; ++i) {
+        if (calls[i].hold_pending) { fail(reply, "The call is still updating. Try again."); return; }
+    }
     call_id = (int)(call - calls);
+    if (code >= 200 && code < 300 && (call->direction != DIR_INCOMING || call->connected_at > 0 || strcmp(call->state, "incoming") != 0)) {
+        fail(reply, "The call is no longer ringing."); return;
+    }
+    if (code >= 200 && code < 300 && call->gateway_call_id[0] &&
+        (!cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(params, "expectedStartedAt")) ||
+         strcmp(param_str(params, "accountId", ""), call->account_id) != 0 ||
+         strcmp(param_str(params, "claimedGatewayCallId", ""), call->gateway_call_id) != 0)) {
+        fail(reply, "This gateway call needs an authenticated answer claim."); return;
+    }
+    if (code >= 200 && code < 300 && call->connected_at <= 0 && !account_available(account_by_id(call->account_id))) {
+        pjsua_call_hangup(call_id, 480, NULL, NULL);
+        fail(reply, "Managed access is unavailable.");
+        return;
+    }
     default_call_setting(&setting);
-    check(pjsua_call_answer2(call_id, &setting, (unsigned)param_int(params, "code", 200), NULL, NULL),
+    check(pjsua_call_answer2(call_id, &setting, (unsigned)code, NULL, NULL),
           "pjsua_call_answer2", reply);
 }
 
 static void request_hangup(const cJSON *params, reply_t *reply) {
     call_context *call = require_call(params, "callId", reply);
     if (!call) return;
+    if (param_bool(params, "onlyIfRinging", 0)) {
+        if (!cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(params, "expectedStartedAt"))) { fail(reply, "A call identity is required."); return; }
+        if (call->connected_at > 0 || strcmp(call->state, "incoming") != 0) return;
+    }
     /* Code 0 lets pjsua pick BYE, CANCEL or 603 as appropriate. */
     check(pjsua_call_hangup((pjsua_call_id)(call - calls), (unsigned)param_int(params, "code", 0), NULL, NULL),
           "pjsua_call_hangup", reply);
 }
 
-static void request_set_hold(const cJSON *params, reply_t *reply) {
+static int caller_text(const char *text) {
+    const unsigned char *p = (const unsigned char *)text;
+    if (!text || strlen(text) > 640) return 0;
+    for (; *p; p++) if (*p < 32 || *p == 127) return 0;
+    return 1;
+}
+
+static void request_managed_caller(const cJSON *params, reply_t *reply) {
     call_context *call = require_call(params, "callId", reply);
+    const char *name = param_str(params, "name", NULL), *number = param_str(params, "number", NULL);
+    if (!call) return;
+    if (!call->gateway_call_id[0] || strcmp(param_str(params, "gatewayCallId", ""), call->gateway_call_id) != 0 ||
+        !cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(params, "expectedStartedAt")) ||
+        strcmp(param_str(params, "accountId", ""), call->account_id) != 0 ||
+        !account_available(account_by_id(call->account_id)) || call->connected_at > 0 ||
+        strcmp(call->state, "incoming") != 0 || !caller_text(name) || !caller_text(number)) {
+        fail(reply, "The managed caller identity is unavailable."); return;
+    }
+    copy_text(call->caller_name, sizeof call->caller_name, name, strlen(name));
+    copy_text(call->caller_number, sizeof call->caller_number, number, strlen(number));
+    reply->result = call_json((int)(call - calls), call);
+}
+
+static void request_set_hold(const cJSON *params, const cJSON *request_id, reply_t *reply) {
+    call_context *call = require_call_identity(params, "callId", reply);
     int hold = param_bool(params, "hold", 1);
     pjsua_call_id call_id;
     pj_status_t status;
     if (!call) return;
+    if ((call->conference_id[0] || cJSON_HasObjectItem(params, "conferenceId")) && !require_conference(params, reply)) return;
+    if (strcmp(call->state, "confirmed") != 0 || call->transfer_state) { fail(reply, "This call is not available to hold."); return; }
+    if (!cJSON_IsNumber(request_id)) { fail(reply, "A request identity is required."); return; }
+    if (call->hold_pending) { fail(reply, "The call is still updating. Try again."); return; }
+    if (strcmp(call->state, "confirmed") == 0 && (hold ? (call->media_status == PJSUA_CALL_MEDIA_LOCAL_HOLD || (call->confirmed_hold && call->media_status == PJSUA_CALL_MEDIA_NONE)) :
+        (call->media_status == PJSUA_CALL_MEDIA_ACTIVE || call->media_status == PJSUA_CALL_MEDIA_REMOTE_HOLD || (call->media_status == PJSUA_CALL_MEDIA_NONE && !call->confirmed_hold)))) return;
     call_id = (pjsua_call_id)(call - calls);
-    call->hold_requested = hold;
+    if (!hold) for (int i = 0; i < PJSUA_MAX_CALLS; ++i) {
+        if (calls[i].hold_pending) { fail(reply, "The call is still updating. Try again."); return; }
+    }
+    call->hold_pending = 1;
+    call->hold_reply_pending = 1;
+    call->hold_target = hold;
+    call->hold_sequence = 0;
+    call->hold_accepted = 0;
+    call->hold_request_id = request_id->valuedouble;
+    call->hold_deadline = monotonic_ms() + 4000;
+    apply_media_wiring(call);
     if (hold) {
         status = pjsua_call_set_hold2(call_id, 0, NULL);
     } else {
@@ -1173,14 +1816,22 @@ static void request_set_hold(const cJSON *params, reply_t *reply) {
         setting.flag |= PJSUA_CALL_UNHOLD;
         status = pjsua_call_reinvite2(call_id, &setting, NULL);
     }
-    check(status, hold ? "pjsua_call_set_hold2" : "pjsua_call_reinvite2", reply);
-    emit_call("callChanged", call_id, call);
+    if (!check(status, hold ? "pjsua_call_set_hold2" : "pjsua_call_reinvite2", reply)) {
+        call->hold_pending = 0; call->hold_reply_pending = 0; apply_media_wiring(call); return;
+    }
+    reply->deferred = 1;
 }
 
 static void request_set_muted(const cJSON *params, reply_t *reply) {
     call_context *call = require_call(params, "callId", reply);
     if (!call) return;
     call->muted = param_bool(params, "muted", 1);
+    call_context *peer = conference_peer(call);
+    if (peer) {
+        peer->muted = call->muted;
+        apply_media_wiring(peer);
+        emit_call("callChanged", (int)(peer - calls), peer);
+    }
     apply_media_wiring(call);
     emit_call("callChanged", (int)(call - calls), call);
 }
@@ -1203,24 +1854,53 @@ static void request_send_dtmf(const cJSON *params, reply_t *reply) {
     check(status, "pjsua_call_send_dtmf", reply);
 }
 
+static call_context *require_transfer_call(const cJSON *params, const char *key, reply_t *reply) {
+    call_context *call = require_call_identity(params, key, reply);
+    if (!call) return NULL;
+    if (!account_available(account_by_id(call->account_id))) {
+        fail(reply, "Calling account access is unavailable."); return NULL;
+    }
+    if (strcmp(call->state, "confirmed") != 0 || call->transfer_state || call->conference_id[0] || call->hold_pending) {
+        fail(reply, "This call is not available to transfer."); return NULL;
+    }
+    return call;
+}
+
 static void request_transfer(const cJSON *params, reply_t *reply) {
-    call_context *call = require_call(params, "callId", reply);
+    call_context *call = require_transfer_call(params, "callId", reply);
     const char *uri = param_str(params, "uri", "");
     pj_str_t destination = pjs(uri);
+    pj_status_t status;
     if (!call) return;
     if (pjsua_verify_sip_url(uri) != PJ_SUCCESS) {
         fail(reply, "\xE2\x80\x9C%s\xE2\x80\x9D is not a valid SIP address.", uri);
         return;
     }
-    check(pjsua_call_xfer((pjsua_call_id)(call - calls), &destination, NULL), "pjsua_call_xfer", reply);
+    if (!gateway_destination(account_by_id(call->account_id), uri)) { fail(reply, "Use a phone number on this gateway account."); return; }
+    transfer_state(call, 1, "Transferring…");
+    status = pjsua_call_xfer((pjsua_call_id)(call - calls), &destination, NULL);
+    if (status != PJ_SUCCESS) transfer_state(call, 0, "Transfer failed. Your call is still connected.");
+    check(status, "pjsua_call_xfer", reply);
 }
 
 static void request_attended_transfer(const cJSON *params, reply_t *reply) {
-    call_context *call = require_call(params, "callId", reply);
-    call_context *other = call ? require_call(params, "otherCallId", reply) : NULL;
+    call_context *call = require_transfer_call(params, "callId", reply);
+    call_context *other = call ? require_transfer_call(params, "otherCallId", reply) : NULL;
+    pj_status_t status;
     if (!call || !other) return;
-    check(pjsua_call_xfer_replaces((pjsua_call_id)(call - calls), (pjsua_call_id)(other - calls), 0, NULL),
-          "pjsua_call_xfer_replaces", reply);
+    if (call == other || strcmp(call->account_id, other->account_id) != 0) {
+        fail(reply, "Choose another connected call on the same account."); return;
+    }
+    call->transfer_peer = (int)(other - calls);
+    call->transfer_peer_started = other->started_at;
+    transfer_state(other, 2, "Transferring…");
+    transfer_state(call, 1, "Transferring…");
+    status = pjsua_call_xfer_replaces((pjsua_call_id)(call - calls), (pjsua_call_id)(other - calls), 0, NULL);
+    if (status != PJ_SUCCESS) {
+        release_transfer_peer(call, 0);
+        transfer_state(call, 0, "Transfer failed. Your call is still connected.");
+    }
+    check(status, "pjsua_call_xfer_replaces", reply);
 }
 
 static void request_active_calls(reply_t *reply) {
@@ -1230,6 +1910,51 @@ static void request_active_calls(reply_t *reply) {
         if (calls[i].used) cJSON_AddItemToArray(reply->result, call_json(i, &calls[i]));
     }
 }
+
+#ifdef SIPPER_TESTING
+static void request_test_digest(const cJSON *params, reply_t *reply) {
+    const char *name = param_str(params, "algorithm", "");
+    pjsip_auth_algorithm_type algorithm = strcmp(name, "md5") == 0 ? PJSIP_AUTH_ALGORITHM_MD5 :
+        strcmp(name, "sha256") == 0 ? PJSIP_AUTH_ALGORITHM_SHA256 : PJSIP_AUTH_ALGORITHM_SHA512_256;
+    pjsip_cred_info credential;
+    char bytes[65] = { 0 };
+    pj_str_t result = { bytes, 64 }, nonce = pjs("fixture-nonce"), count = pjs("00000001"),
+        cnonce = pjs("fixture-cnonce"), qop = pjs(param_bool(params, "qop", 0) ? "auth" : ""),
+        uri = pjs("sip:sipper.test"), realm = pjs("sipper.test"), method = pjs("REGISTER");
+    if (!running || !pjsip_auth_is_algorithm_supported(algorithm)) { fail(reply, "Digest algorithm unavailable."); return; }
+    pj_bzero(&credential, sizeof credential);
+    credential.username = pjs("gateway-test");
+    credential.data = pjs(param_str(params, "credential", ""));
+    credential.data_type = param_bool(params, "precomputed", 0) ? PJSIP_CRED_DATA_DIGEST : PJSIP_CRED_DATA_PLAIN_PASSWD;
+    credential.algorithm_type = algorithm;
+    if (!check(pjsip_auth_create_digest2(&result, &nonce, &count, &cnonce, &qop, &uri, &realm, &credential, &method, algorithm), "test digest", reply)) return;
+    bytes[result.slen] = '\0';
+    reply->result = cJSON_CreateString(bytes);
+}
+
+static void request_test_media(const cJSON *params, reply_t *reply) {
+    call_context *call = require_call(params, "callId", reply);
+    pjsua_stream_info info;
+    pjsua_stream_stat stats;
+    char dump[16384], codec[64];
+    int id;
+    if (!call) return;
+    id = (int)(call - calls);
+    if (!check(pjsua_call_get_stream_info(id, 0, &info), "test stream info", reply) ||
+        !check(pjsua_call_get_stream_stat(id, 0, &stats), "test stream stats", reply) ||
+        !check(pjsua_call_dump(id, PJ_TRUE, dump, sizeof dump, ""), "test stream transport", reply)) return;
+    copy_text(codec, sizeof codec, info.info.aud.fmt.encoding_name.ptr, info.info.aud.fmt.encoding_name.slen);
+    reply->result = cJSON_CreateObject();
+    cJSON_AddStringToObject(reply->result, "codec", codec);
+    cJSON_AddNumberToObject(reply->result, "sent", stats.rtcp.tx.pkt);
+    cJSON_AddNumberToObject(reply->result, "received", stats.rtcp.rx.pkt);
+    cJSON_AddBoolToObject(reply->result, "srtp", strstr(dump, "SRTP status: Active") != NULL);
+    cJSON_AddBoolToObject(reply->result, "ice", strstr(dump, "state: Negotiation Success") != NULL);
+    unsigned tx_level = 0, rx_level = 0;
+    pjsua_conf_get_signal_level(call->conf_slot, &tx_level, &rx_level);
+    cJSON_AddNumberToObject(reply->result, "receivedLevel", rx_level);
+}
+#endif
 
 static void request_audio_devices(reply_t *reply) {
     pjmedia_aud_dev_info *infos;
@@ -1310,8 +2035,13 @@ static void request_set_registration(const cJSON *params, reply_t *reply) {
     int enabled = param_bool(params, "enabled", 1);
     pj_status_t status;
     char message[256];
-    if (!account) {
+    if (!account || (enabled && !account_available(account))) {
         fail(reply, "The account is not active.");
+        return;
+    }
+    if (enabled && !network_available) {
+        emit_registration(account->id, "failed", 0, "No network connection", 0);
+        fail(reply, "No network connection");
         return;
     }
     status = pjsua_acc_set_registration(account->acc, enabled ? PJ_TRUE : PJ_FALSE);
@@ -1320,6 +2050,110 @@ static void request_set_registration(const cJSON *params, reply_t *reply) {
     } else {
         emit_registration(account->id, "failed", 0, pj_message(status, message, sizeof message), 0);
     }
+}
+
+/* Network callbacks only mark a change. All account/media work stays on this loop. */
+#ifdef _WIN32
+static HANDLE interface_notification, address_notification, route_notification;
+static volatile LONG network_dirty = 1;
+static double network_observation_retry_at;
+static VOID CALLBACK interface_changed(PVOID context, PMIB_IPINTERFACE_ROW row, MIB_NOTIFICATION_TYPE type) { InterlockedExchange(&network_dirty, 1); }
+static VOID CALLBACK address_changed(PVOID context, PMIB_UNICASTIPADDRESS_ROW row, MIB_NOTIFICATION_TYPE type) { InterlockedExchange(&network_dirty, 1); }
+static VOID CALLBACK route_changed(PVOID context, PMIB_IPFORWARD_ROW2 row, MIB_NOTIFICATION_TYPE type) { InterlockedExchange(&network_dirty, 1); }
+
+static void start_network_observer(void) {
+    DWORD a = interface_notification ? NO_ERROR : NotifyIpInterfaceChange(AF_UNSPEC, interface_changed, NULL, FALSE, &interface_notification);
+    DWORD b = address_notification ? NO_ERROR : NotifyUnicastIpAddressChange(AF_UNSPEC, address_changed, NULL, FALSE, &address_notification);
+    DWORD c = route_notification ? NO_ERROR : NotifyRouteChange2(AF_UNSPEC, route_changed, NULL, FALSE, &route_notification);
+    if (a || b || c) {
+        app_log("network notification setup failed; retrying (%lu, %lu, %lu)", a, b, c);
+        network_observation_retry_at = monotonic_ms() + 5000;
+    }
+}
+static void stop_network_observer(void) {
+    if (interface_notification) CancelMibChangeNotify2(interface_notification);
+    if (address_notification) CancelMibChangeNotify2(address_notification);
+    if (route_notification) CancelMibChangeNotify2(route_notification);
+}
+static void observe_network(void) {
+    PMIB_UNICASTIPADDRESS_TABLE table = NULL;
+    ULONG i;
+    int available = 0;
+    int retry = network_observation_retry_at && monotonic_ms() >= network_observation_retry_at;
+    DWORD status;
+    if (!InterlockedExchange(&network_dirty, 0) && !retry) return;
+    if (retry) { network_observation_retry_at = 0; start_network_observer(); }
+    status = GetUnicastIpAddressTable(AF_UNSPEC, &table);
+    if (status != NO_ERROR) {
+        app_log("could not inspect network addresses; retrying (%lu)", status);
+        network_path_available = 0;
+        network_changed();
+        network_observation_retry_at = monotonic_ms() + 5000;
+        return;
+    }
+    for (i = 0; i < table->NumEntries; i++) {
+        MIB_IF_ROW2 row;
+        memset(&row, 0, sizeof row);
+        row.InterfaceLuid = table->Table[i].InterfaceLuid;
+        if ((table->Table[i].DadState == IpDadStatePreferred || table->Table[i].DadState == IpDadStateDeprecated) && GetIfEntry2(&row) == NO_ERROR &&
+            row.OperStatus == IfOperStatusUp && row.Type != IF_TYPE_SOFTWARE_LOOPBACK) { available = 1; break; }
+    }
+    FreeMibTable(table);
+    network_path_available = available;
+    network_changed();
+}
+#else
+static void start_network_observer(void) {}
+static void stop_network_observer(void) {}
+static void observe_network(void) {}
+#endif
+
+static void network_changed(void) {
+    int i;
+    cJSON *event = event_new("network");
+    network_available = network_path_available && !network_suspended;
+    network_recovery_at = network_available ? monotonic_ms() + 500 : 0;
+    cJSON_AddBoolToObject(event, "available", network_available);
+    emit(event);
+    if (!running) return;
+    for (i = 0; i < PJSUA_MAX_ACC; i++) {
+        pjsua_acc_info info;
+        if (!account_available(&accounts[i])) continue;
+        /* Preserve permanent credential failures; PJSIP deliberately skips them.
+         * A transient failure will be replaced by its fresh registration callback. */
+        if (network_available && pjsua_acc_get_info(accounts[i].acc, &info) == PJ_SUCCESS && info.status >= 300)
+            on_reg_state2(accounts[i].acc, NULL);
+        else emit_registration(accounts[i].id, "registering", 0, "", 0);
+    }
+}
+
+static void recover_network(void) {
+    int i;
+    pj_status_t status;
+    pjsua_ip_change_param param;
+    if (!running || !network_available || !network_recovery_at || monotonic_ms() < network_recovery_at) return;
+    for (i = 0; i < PJSUA_MAX_ACC; i++) {
+        if (accounts[i].used && accounts[i].withdrawal_retry_at) return;
+    }
+    network_recovery_at = 0;
+    for (i = 0; i < PJSUA_MAX_ACC; i++) {
+        if (account_available(&accounts[i]) && accounts[i].registration_deferred) {
+            status = pjsua_acc_set_registration(accounts[i].acc, PJ_TRUE);
+            if (status == PJ_SUCCESS) accounts[i].registration_deferred = 0;
+            else {
+                char message[256];
+                emit_registration(accounts[i].id, "failed", 0, pj_message(status, message, sizeof message), 0);
+            }
+        }
+    }
+    pjsua_ip_change_param_default(&param);
+    status = pjsua_handle_ip_change(&param);
+    if (status != PJ_SUCCESS) {
+        app_log("network recovery failed (%d)", status);
+        for (i = 0; i < PJSUA_MAX_ACC; i++) {
+            if (account_available(&accounts[i])) emit_registration(accounts[i].id, "failed", 0, "Network recovery failed", 0);
+        }
+    } else emit(event_new("networkRecovered"));
 }
 
 static int quit_requested;
@@ -1344,25 +2178,61 @@ static void handle_line(const char *line) {
     else if (strcmp(method, "stop") == 0) engine_stop();
     else if (strcmp(method, "syncAccounts") == 0) engine_sync_accounts(params, &reply);
     else if (strcmp(method, "setRegistration") == 0) request_set_registration(params, &reply);
+    else if (strcmp(method, "setMeetingAudio") == 0) request_meeting_audio(params, &reply);
+    else if (strcmp(method, "setSuspended") == 0) {
+        const cJSON *value = cJSON_GetObjectItemCaseSensitive(params, "suspended");
+        if (!cJSON_IsBool(value)) fail(&reply, "setSuspended needs a boolean suspended value.");
+        else {
+            network_suspended = cJSON_IsTrue(value);
+#ifdef _WIN32
+            if (!network_suspended) { InterlockedExchange(&network_dirty, 1); observe_network(); }
+#endif
+            network_changed();
+        }
+    }
+#ifdef SIPPER_TESTING
+    else if (strcmp(method, "testNetworkChanged") == 0) {
+        const cJSON *value = cJSON_GetObjectItemCaseSensitive(params, "available");
+        if (!cJSON_IsBool(value)) fail(&reply, "testNetworkChanged needs a boolean available value.");
+        else { network_path_available = cJSON_IsTrue(value); network_changed(); }
+    }
+#endif
     else if (strcmp(method, "reRegisterAll") == 0) {
         int i;
         for (i = 0; i < PJSUA_MAX_ACC; i++) {
-            if (accounts[i].used) pjsua_acc_set_registration(accounts[i].acc, PJ_TRUE);
+            if (account_available(&accounts[i])) {
+                if (network_available) pjsua_acc_set_registration(accounts[i].acc, PJ_TRUE);
+                else emit_registration(accounts[i].id, "failed", 0, "No network connection", 0);
+            }
         }
     }
     else if (!running && strcmp(method, "version") != 0 && strcmp(method, "shutdown") != 0 &&
              strcmp(method, "activeCalls") != 0 && strcmp(method, "audioDevices") != 0 &&
              strcmp(method, "codecs") != 0) fail(&reply, "The SIP engine is not running.");
+    /* Every command that can resume/start phone media shares this ownership fence. */
+    else if (meeting_audio_reference[0] && (strcmp(method, "makeCall") == 0 ||
+             strcmp(method, "beginConference") == 0 ||
+             (strcmp(method, "setHold") == 0 && !param_bool(params, "hold", 0)) ||
+             (strcmp(method, "answer") == 0 && param_int(params, "code", 200) >= 200 && param_int(params, "code", 200) < 300)))
+        fail(&reply, "Leave the meeting before starting or resuming phone audio.");
     else if (strcmp(method, "makeCall") == 0) request_make_call(params, &reply);
     else if (strcmp(method, "answer") == 0) request_answer(params, &reply);
+    else if (strcmp(method, "setManagedCaller") == 0) request_managed_caller(params, &reply);
     else if (strcmp(method, "hangup") == 0) request_hangup(params, &reply);
     else if (strcmp(method, "hangupAll") == 0) pjsua_call_hangup_all();
-    else if (strcmp(method, "setHold") == 0) request_set_hold(params, &reply);
+    else if (strcmp(method, "setHold") == 0) request_set_hold(params, id_item, &reply);
     else if (strcmp(method, "setMuted") == 0) request_set_muted(params, &reply);
     else if (strcmp(method, "sendDtmf") == 0) request_send_dtmf(params, &reply);
+    else if (strcmp(method, "beginConference") == 0) request_begin_conference(params, &reply);
+    else if (strcmp(method, "splitConference") == 0) request_split_conference(params, &reply);
+    else if (strcmp(method, "hangupConference") == 0) request_hangup_conference(params, &reply);
     else if (strcmp(method, "transfer") == 0) request_transfer(params, &reply);
     else if (strcmp(method, "attendedTransfer") == 0) request_attended_transfer(params, &reply);
     else if (strcmp(method, "activeCalls") == 0) request_active_calls(&reply);
+#ifdef SIPPER_TESTING
+    else if (strcmp(method, "testMedia") == 0) request_test_media(params, &reply);
+    else if (strcmp(method, "testDigest") == 0) request_test_digest(params, &reply);
+#endif
     else if (strcmp(method, "audioDevices") == 0) request_audio_devices(&reply);
     else if (strcmp(method, "setAudioDevices") == 0)
         apply_audio_devices(param_str(params, "input", NULL), param_str(params, "output", NULL));
@@ -1381,7 +2251,7 @@ static void handle_line(const char *line) {
     }
     else fail(&reply, "Unknown method \xE2\x80\x9C%s\xE2\x80\x9D.", method);
 
-    if (cJSON_IsNumber(id_item)) {
+    if (cJSON_IsNumber(id_item) && !reply.deferred) {
         response = cJSON_CreateObject();
         cJSON_AddNumberToObject(response, "id", id_item->valuedouble);
         cJSON_AddBoolToObject(response, "ok", !reply.failed);
@@ -1521,10 +2391,29 @@ int main(int argc, char **argv) {
     hello = event_new("hello");
     cJSON_AddStringToObject(hello, "pjsip", pj_get_version());
     emit(hello);
+    start_network_observer();
 
     while (!quit_requested) {
         line_node *node;
         int closed;
+        int i;
+
+        for (i = 0; i < PJSUA_MAX_CALLS; i++) {
+            if (calls[i].hold_pending && calls[i].hold_reply_pending && monotonic_ms() >= calls[i].hold_deadline) {
+                cJSON *response = cJSON_CreateObject();
+                cJSON_AddNumberToObject(response, "id", calls[i].hold_request_id);
+                cJSON_AddBoolToObject(response, "ok", 0);
+                cJSON_AddStringToObject(response, "error", "The phone system did not confirm the hold change. Check the call and try again.");
+                emit(response);
+                /* A late response may still change media; keep admission fenced until it resolves. */
+                calls[i].hold_reply_pending = 0;
+            }
+        }
+
+        observe_network();
+        finish_transfers();
+        maintain_managed_accounts();
+        recover_network();
 
         sync_lock(&queue_sync);
         if (!queue_head && !input_closed && !running) sync_wait_ms(&queue_sync, 200);
@@ -1546,6 +2435,7 @@ int main(int argc, char **argv) {
         if (running) pjsua_handle_events(10);
     }
 
+    stop_network_observer();
     engine_stop();
     return 0;
 }

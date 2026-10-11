@@ -17,6 +17,8 @@ xcuserdata/
 # Extension packaging
 /extension/dist/
 /extension/*.zip
+# Local promotional authoring workspace; reviewed website assets live in website/.
+/marketing/
 node_modules/
 
 # Website (Cloudflare Workers) local state
@@ -38,6 +40,8 @@ node_modules/
 *.pem
 *.mobileprovision
 *.provisionprofile
+*.jks
+*.keystore
 /.claude/
 /.codex/
 /.agents/
@@ -48,3 +52,31 @@ node_modules/
 /windows/engine/build/
 /windows/build/licences/
 /windows/tests/e2e/output/
+
+# Managed platform and mobile build state
+/portal/.nuxt/
+/portal/.output/
+/portal/.data/
+/portal/coverage/
+/portal/test-results/
+/android/.gradle/
+/android/.kotlin/
+/android/local.properties
+/android/**/build/
+/android/vendor/
+/android/.idea/
+/ios/build/
+/ios/DerivedData/
+/ios/DerivedData*/
+/ios/vendor/
+/ios/SipperIOS.xcodeproj/
+.build/
+.swiftpm/
+.pnpm-store/
+__pycache__/
+/gateway/.state/
+
+# Operator recovery material (keep populated secrets and archives outside the repo).
+*.dump
+*.dump.age
+/infra/.private/

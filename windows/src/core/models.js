@@ -206,6 +206,10 @@ export function normaliseDialString(raw) {
 /** Builds a dialable SIP URI for a number or address typed by the user. */
 export function callURI(account, target) {
   const trimmed = String(target ?? '').trim();
+  if (account.managed?.mode === 'gateway' && (trimmed.length > 512 || !/^[+0-9*#(). -]+$/.test(trimmed) ||
+      !/^\+?[0-9*#]+$/.test(normaliseDialString(trimmed)) || normaliseDialString(trimmed).length > 128)) {
+    throw new Error('Use a phone number or extension of up to 128 characters with this managed account.');
+  }
   const lower = trimmed.toLowerCase();
   if (lower.startsWith('sip:') || lower.startsWith('sips:')) return trimmed;
   if (trimmed.includes('@')) return `sip:${trimmed}`;
@@ -295,6 +299,7 @@ export function makeCallRecord(fields = {}) {
   return {
     id: fields.id ?? newID(),
     accountID: fields.accountID ?? '',
+    isManaged: fields.isManaged === true,
     direction: fields.direction ?? 'outgoing',
     outcome: fields.outcome ?? 'failed',
     remoteNumber: fields.remoteNumber ?? '',
@@ -314,6 +319,7 @@ export function decodeCallRecord(raw) {
   return {
     id: raw.id,
     accountID: raw.accountID,
+    isManaged: raw.isManaged === true,
     direction: oneOf(raw.direction, ['incoming', 'outgoing'], 'outgoing'),
     outcome: oneOf(raw.outcome, Object.keys(OUTCOMES), 'failed'),
     remoteNumber: str(raw.remoteNumber),
@@ -350,6 +356,7 @@ export function defaultSettings(userAgent = 'Sipper') {
     echoTailMilliseconds: 200,
     codecs: [],
     showNotifications: true,
+    messageNotifications: false,
     showIncomingCallAlert: true,
     doNotDisturb: false,
     launchAtLogin: false,
@@ -387,6 +394,7 @@ export function decodeSettings(raw, userAgent) {
         .map((c) => ({ codecID: c.codecID, isEnabled: bool(c.isEnabled, true) }))
       : [],
     showNotifications: bool(raw.showNotifications, defaults.showNotifications),
+    messageNotifications: bool(raw.messageNotifications, defaults.messageNotifications),
     showIncomingCallAlert: bool(raw.showIncomingCallAlert, defaults.showIncomingCallAlert),
     doNotDisturb: bool(raw.doNotDisturb, defaults.doNotDisturb),
     launchAtLogin: bool(raw.launchAtLogin, defaults.launchAtLogin),
