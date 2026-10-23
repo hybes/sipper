@@ -16,8 +16,12 @@ function resetLicenceDraft() {
 }
 watch(() => data.value?.subscription, resetLicenceDraft, { immediate: true })
 async function reloadLicences() { await refresh(); resetLicenceDraft() }
-const pilotActive = computed(() => data.value?.subscription?.provider === 'pilot' && new Date(data.value.subscription.paid_until).getTime() > Date.now())
-const available = computed(() => Math.max(0, (data.value?.subscription?.purchased_seats ?? 0) - (data.value?.seats.length ?? 0)))
+const now = ref(Date.now())
+let clock: ReturnType<typeof setInterval> | undefined
+onMounted(() => { clock = setInterval(() => { now.value = Date.now() }, 15_000) })
+onBeforeUnmount(() => { clearInterval(clock) })
+const pilotActive = computed(() => data.value?.subscription?.provider === 'pilot' && new Date(data.value.subscription.paid_until).getTime() > now.value)
+const available = computed(() => data.value?.subscription?.provider === 'pilot' && !pilotActive.value ? 0 : Math.max(0, (data.value?.subscription?.purchased_seats ?? 0) - (data.value?.seats.length ?? 0)))
 async function create() { const result = await action(() => $fetch<any>(`/api/platform/workspaces/${id}/organisations`, { method: 'POST', body: { name: name.value } }), 'Customer added'); if (result) await navigateTo(`/portal/organisations/${result.id}`) }
 async function bill(operation: string) { const result = await action(() => $fetch<any>(`/api/platform/workspaces/${id}/billing/${operation}`, { method: 'POST', body: operation === 'checkout' ? { quantity: quantity.value, interval: interval.value } : operation === 'portal' ? {} : { quantity: quantity.value } })); if (result?.url) location.assign(result.url); else if (result) await refresh() }
 async function savePilot() {
@@ -47,7 +51,7 @@ async function moreAudit() { const before = auditRows.value.at(-1)?.id; const re
         <div class="space-y-4">
           <UAlert v-if="data.subscription?.provider === 'test'" title="Local test subscription" description="No payment has been taken. These licences are for development only." color="warning" variant="soft" />
           <template v-if="data.subscription?.provider === 'pilot'">
-            <p class="text-sm leading-relaxed text-muted">No payment is required for this pilot. Managed access expires {{ activityDate(data.subscription.paid_until) }} unless the platform owner extends it.</p>
+            <p class="text-sm leading-relaxed text-muted">No payment is required for this pilot. Managed access {{ pilotActive ? 'expires' : 'expired' }} {{ activityDate(data.subscription.paid_until) }}. The platform owner can extend it.</p>
           </template>
           <p v-else class="text-sm leading-relaxed text-muted">One licence per named user, across all their devices. Administrator access is included.</p>
           <template v-if="data.subscription?.provider !== 'pilot' || overview?.platformOwner">

@@ -397,8 +397,12 @@ assert.equal(typeof claims.sid, 'string');
         print('PASS: production CSP covers every rendered inline script; direct origin access is refused; proxied sign-in/session and unforgeable observed IP verified', flush=True)
         print('PASS: proxied discovery, native PKCE consent/token exchange, callback integrity, public-key token validation and wrong-credential rejection', flush=True)
         print('LIMIT: native API issuer-JWKS lookup and browser sign-in require the real HTTPS origin; this fixture substitutes loopback only for token verification', flush=True)
-        sql("restored_test", "INSERT INTO jobs(kind,payload) VALUES ('email','{}'),('call_push','{}')")
-        wait_for(lambda: sql("restored_test", "SELECT count(*) FROM jobs WHERE (kind='email' AND attempts>0 AND last_error='delivery_failed') OR (kind='call_push' AND completed_at IS NOT NULL AND last_error='push_failed')") == "2")
+        # Neither malformed job may reach a provider. Email without a current
+        # invitation is now terminally discarded rather than retried for SMTP.
+        queue_jobs = sql("restored_test", "WITH inserted AS (INSERT INTO jobs(kind,payload) VALUES ('email','{}'),('call_push','{}') RETURNING id) SELECT id FROM inserted").splitlines()
+        assert len(queue_jobs) == 2 and all(re.fullmatch(r'[0-9a-f-]{36}', value) for value in queue_jobs)
+        queued_ids = ','.join(f"'{value}'::uuid" for value in queue_jobs)
+        wait_for(lambda: sql("restored_test", f"SELECT count(*) FROM jobs WHERE id IN ({queued_ids}) AND attempts=1 AND completed_at IS NOT NULL AND payload='{{}}' AND ((kind='email' AND last_error='invitation_unavailable') OR (kind='call_push' AND last_error='push_failed'))") == "2")
         for service in ["portal", "email", "push"]:
             container = run([*compose, "ps", "-q", service], env=compose_env).stdout.strip()
             state = json.loads(run(["docker", "inspect", container]).stdout)[0]

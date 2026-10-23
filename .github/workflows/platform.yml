@@ -84,10 +84,12 @@ jobs:
         env:
           SIPPER_REHEARSAL_APP_IMAGE: sipper-platform:${{ github.sha }}
           SIPPER_REHEARSAL_WEBSITE_IMAGE: sipper-website:${{ github.sha }}
+          SIPPER_REHEARSAL_RECOVERY_IMAGE: sipper-recovery:${{ github.sha }}
         run: |
           python3 infra/single-host/test-certificate.py
           python3 infra/single-host/test-ingress.py
           python3 infra/single-host/test-runtime.py
+          python3 infra/recovery/rehearse.py
 
       - name: Package reviewed server images
         if: github.event_name != 'pull_request'

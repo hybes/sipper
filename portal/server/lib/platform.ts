@@ -14,7 +14,8 @@ export async function overview(actor: Principal) {
   const owner = await isPlatformOwner(actor)
   if (owner) requireAdminMfa(actor)
   const workspaces = await rows(`SELECT w.*, m.role, COALESCE(s.purchased_seats,0) AS purchased_seats,
-    COALESCE(s.status,'inactive') AS subscription_status,
+    CASE WHEN s.provider='pilot' AND s.paid_until<=now() THEN 'expired'
+      ELSE COALESCE(s.status,'inactive') END AS subscription_status,
     (SELECT count(*)::integer FROM seat_assignments a WHERE a.workspace_id=w.id) AS assigned_seats
     FROM workspaces w LEFT JOIN workspace_members m ON m.workspace_id=w.id AND m.user_id=$1
     LEFT JOIN subscriptions s ON s.workspace_id=w.id WHERE ($2 OR m.user_id IS NOT NULL) ORDER BY w.created_at`, [actor.userId, owner])

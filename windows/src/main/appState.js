@@ -833,7 +833,9 @@ export class AppState extends EventEmitter {
   }
 
   #warnIfMicrophoneBlocked() {
-    if (this.platform.microphoneStatus() === 'denied') {
+    // The explicit null device performs signalling tests without opening a
+    // microphone. Normal hardware calls must still respect the OS denial.
+    if (!this.platform.nullAudio && this.platform.microphoneStatus() === 'denied') {
       this.#alert('Microphone access needed',
         'Windows is blocking Sipper from using the microphone. Open Settings › Privacy & security › Microphone and turn on “Let desktop apps access your microphone”.');
       return false;

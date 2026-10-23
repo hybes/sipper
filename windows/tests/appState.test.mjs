@@ -228,6 +228,27 @@ test('gateway DND and microphone denial decline through the service without answ
   }
 });
 
+test('explicit null audio permits signalling while normal calls respect microphone denial', async t => {
+  for (const nullAudio of [false, true]) {
+    const { state, engine, alerts } = harness(t); t.after(() => state.shutdown());
+    state.platform.nullAudio = nullAudio;
+    state.platform.microphoneStatus = () => 'denied';
+    const account = state.addAccount(draft('1001', state.profiles[0].id), 'fictional');
+    await state.startEngine();
+    assert.equal(engine.sent('start').at(-1).params.nullAudio, nullAudio);
+    const outgoing = engineCall({ accountId: account.id, direction: 'outgoing', state: 'calling' });
+    engine.responses.makeCall = outgoing;
+    assert.equal(await state.call('2001', account.id), nullAudio);
+    assert.equal(engine.sent('makeCall').length, nullAudio ? 1 : 0);
+    if (nullAudio) engine.emit('callEnded', { call: ended(outgoing) });
+    const incoming = engineCall({ id: 2, accountId: account.id });
+    engine.emit('incomingCall', { call: incoming });
+    await state.answer(incoming.id);
+    assert.equal(engine.sent('answer').length, nullAudio ? 1 : 0);
+    assert.equal(alerts.some(alert => alert.title === 'Microphone access needed'), !nullAudio);
+  }
+});
+
 test('gateway monitoring dismisses a call answered elsewhere using the captured call identity', async t => {
   const h = await gatewayHarness(t), original = h.client.call;
   let requests = 0;

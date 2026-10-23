@@ -55,6 +55,10 @@ test('Sipper for Windows works end to end', { timeout: 300000, skip: !fs.existsS
   app.process().stderr.pipe(appLog);
   app.process().stdout.pipe(appLog);
   t.after(async () => {
+    // Packaged Windows apps do not always forward their engine log to stderr.
+    const window = app.windows().find(candidate => candidate.url().endsWith('index.html'));
+    const log = await window?.evaluate(() => window.sipper.invoke('logSnapshot')).catch(() => []);
+    fs.writeFileSync(path.join(output, 'engine-log.json'), JSON.stringify(log ?? [], null, 2));
     await app.close().catch(() => {});
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
@@ -62,6 +66,10 @@ test('Sipper for Windows works end to end', { timeout: 300000, skip: !fs.existsS
   const page = await app.firstWindow();
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
+  fs.writeFileSync(path.join(output, 'audio-environment.json'), JSON.stringify(await app.evaluate(({ systemPreferences }) => ({
+    microphoneStatus: systemPreferences.getMediaAccessStatus('microphone'),
+    nullAudio: process.env.SIPPER_NULL_AUDIO === '1',
+  })), null, 2));
   const shot = (name) => page.screenshot({ path: path.join(output, `${name}.png`) }).catch(() => {});
   await page.getByRole('heading', { name: 'Dialer' }).waitFor({ timeout: 30000 });
   await page.evaluate(() => window.sipper.invoke('updateSettings', { ringtone: 'silent', showNotifications: false }));

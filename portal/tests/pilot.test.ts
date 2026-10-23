@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { getPool, rows } from '../server/lib/db'
 import { configurePilot } from '../server/lib/pilot'
 import { configureTestBilling } from '../server/lib/billing'
-import { assignSeat, createOrganisation, createWorkspace, requireLicensedMember, workspaceDetails } from '../server/lib/platform'
+import { assignSeat, createOrganisation, createWorkspace, overview, requireLicensedMember, workspaceDetails } from '../server/lib/platform'
 import type { Principal } from '../server/lib/access'
 
 const owner: Principal = { userId: randomUUID(), email: `pilot-owner-${randomUUID()}@example.invalid`, verified: true, mfa: true }
@@ -43,6 +43,7 @@ test('only a verified MFA platform owner can grant production pilot capacity', a
   const sub = (await workspaceDetails(admin, workspace)).subscription!
   assert.equal(sub.provider, 'pilot')
   assert.equal(sub.paid_until.toISOString(), grant.expiresAt)
+  assert.equal((await overview(admin)).workspaces.find(w => w.id === workspace)!.subscription_status, 'active')
 })
 
 test('pilot exact retries are idempotent, stale changes fail and existing payments are preserved', async () => {
@@ -67,6 +68,8 @@ test('pilots require bounded expiry and cannot drop allocated capacity', async (
 test('expiry withdraws managed access without deleting personal identity or seat assignments', async () => {
   await getPool().query("UPDATE subscriptions SET paid_until=now()-interval '1 second' WHERE workspace_id=$1", [workspace])
   await assert.rejects(requireLicensedMember(member, organisation), code('managed_access_unavailable'))
+  assert.equal((await overview(admin)).workspaces.find(w => w.id === workspace)!.subscription_status, 'expired')
+  assert.equal((await overview(admin)).workspaces.find(w => w.id === paidWorkspace)!.subscription_status, 'active')
   assert.equal((await rows('SELECT * FROM seat_assignments WHERE workspace_id=$1', [workspace])).length, 2)
   assert.equal((await rows('SELECT id FROM auth_user WHERE id=$1', [member.userId])).length, 1)
 })
