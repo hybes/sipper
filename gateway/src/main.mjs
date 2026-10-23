@@ -14,8 +14,10 @@ if (origin.username || origin.password || origin.pathname !== '/' || origin.sear
   || (origin.protocol !== 'https:' && !(origin.protocol === 'http:' && ['localhost','127.0.0.1','[::1]'].includes(origin.hostname)))) throw new Error('Invalid SIPPER_PORTAL_URL');
 const key = required('SIPPER_GATEWAY_API_KEY');
 if (key.length < 32) throw new Error('SIPPER_GATEWAY_API_KEY is too short');
-const allowed = new Set(required('SIPPER_UPSTREAM_HOSTS').split(',').map(host => host.trim().toLowerCase()).filter(Boolean));
-if (!allowed.size) throw new Error('SIPPER_UPSTREAM_HOSTS is empty');
+// A fresh deployment can run before any PBX is approved. Empty always denies
+// upstream routes; it must never mean unrestricted provider access.
+const allowed = new Set((env.SIPPER_UPSTREAM_HOSTS ?? '').split(',').map(host => host.trim().toLowerCase()).filter(Boolean));
+if (!allowed.size) console.info('No upstream PBX hosts are approved; the gateway will stay not ready for calls.');
 const instanceId = randomUUID();
 let leaseLost = false;
 let leaseDeadline = 0;
@@ -77,8 +79,9 @@ try {
         await calls.reconcile();
         const snapshot = await portal('GET', 'upstreams');
         await upstreams.reconcile(snapshot.accounts, calls.inUse);
-        const readiness = await portal('POST', 'heartbeat', { instanceId, ready: ari.connected && !stopping });
-        calls.accepting = ari.connected && !stopping && !leaseLost && !storageFailed;
+        const ready = ari.connected && !stopping && allowed.size > 0;
+        const readiness = await portal('POST', 'heartbeat', { instanceId, ready });
+        calls.accepting = ready && !leaseLost && !storageFailed;
         if (calls.accepting && !registrationPoll) {
           const current = () => calls.accepting && !stopping && !leaseLost;
           // Capture before reading Asterisk. A late snapshot cannot be relabelled

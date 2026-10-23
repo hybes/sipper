@@ -19,6 +19,14 @@ the API rejects requests without a current matching lease. A second process
 cannot replace the owner's event connection. Clean shutdown releases the lease
 only after active calls finish; an old instance cannot release its replacement.
 
+A fresh controller may start with `SIPPER_UPSTREAM_HOSTS` blank or unset. It keeps
+its ownership heartbeat and ARI connection, approves no upstream routes and
+reports **Not ready** for calls. This supports installing the service before a
+customer PBX is available. Add exact approved PBX hostnames to the private
+controller environment and recreate the controller when configuring service;
+an empty list never permits arbitrary hosts. Starting the process does not
+establish provider interoperability or call quality.
+
 ## Call activity
 
 Gateway transfers remain disabled in the shared endpoint configuration. The

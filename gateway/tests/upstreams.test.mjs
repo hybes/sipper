@@ -1,7 +1,49 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { createServer } from 'node:http';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { Upstreams, upstreamObjects } from '../src/upstreams.mjs';
+
+test('a fresh controller reaches its not-ready heartbeat without an approved PBX', async () => {
+  const heartbeats = [];
+  const server = createServer(async (request, response) => {
+    let body = ''; for await (const chunk of request) body += chunk;
+    heartbeats.push({ path: request.url, body: JSON.parse(body) });
+    // Stop before ARI connectivity or any call handling. Only startup is tested.
+    response.writeHead(503, { 'content-type': 'application/json' }); response.end('{}');
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    for (const hosts of ['', ' , ', undefined]) {
+      const env = { ...process.env, SIPPER_PORTAL_URL: `http://127.0.0.1:${server.address().port}`,
+        SIPPER_GATEWAY_API_KEY: 'fictional-gateway-key'.repeat(3), SIPPER_ARI_PASSWORD: 'fictional-ari-password'.repeat(3) };
+      if (hosts === undefined) delete env.SIPPER_UPSTREAM_HOSTS; else env.SIPPER_UPSTREAM_HOSTS = hosts;
+      await assert.rejects(promisify(execFile)(process.execPath, [fileURLToPath(new URL('../src/main.mjs', import.meta.url))],
+        { env, timeout: 8000 }), error => error.code === 1
+          && error.stdout.includes('No upstream PBX hosts are approved')
+          && error.stderr.includes('Gateway controller could not start.'));
+    }
+    assert.equal(heartbeats.length, 3);
+    for (const heartbeat of heartbeats) {
+      assert.equal(heartbeat.path, '/api/gateway/heartbeat');
+      assert.equal(heartbeat.body.ready, false);
+    }
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});
+
+test('an empty allowlist creates no upstream objects even when an account is assigned', async () => {
+  const changes = [];
+  const manager = new Upstreams({ put: async (...args) => changes.push(args) }, new Set());
+  const account = { id: randomUUID(), revision: 1, password: 'fictional-private-password',
+    settings: { server: 'pbx.example.invalid', domain: 'example.invalid', username: '1001', transport: 'tls', srtp: 'required' } };
+  await manager.reconcile([account]);
+  assert.equal(manager.errors.get(account.id), 'unsupported_settings');
+  assert.equal(manager.accounts.size, 0);
+  assert.deepEqual(changes, []);
+});
 
 test('upstreams require approved encrypted routes and keep secrets out of stored routing metadata', async () => {
   const account = { id: randomUUID(), revision: 1, password: 'a;password=with-sensitive-characters', settings: { server: 'pbx.example.invalid', domain: 'example.invalid', username: '1001', transport: 'tls', srtp: 'required' } };
