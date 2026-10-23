@@ -39,7 +39,7 @@ export async function workspaceDetails(actor: Principal, workspaceId: string) {
     (SELECT count(*)::integer FROM organisation_members m WHERE m.organisation_id=o.id AND m.status<>'removed') AS people_count,
     (SELECT count(*)::integer FROM devices d WHERE d.organisation_id=o.id AND d.revoked_at IS NULL) AS device_count
     FROM organisations o WHERE workspace_id=$1 ORDER BY name`, [workspaceId])
-  const subscription = (await rows('SELECT provider, status, purchased_seats, paid_until, grace_until, over_capacity, cancellation_scheduled FROM subscriptions WHERE workspace_id=$1', [workspaceId]))[0] ?? null
+  const subscription = (await rows('SELECT provider, status, purchased_seats, paid_until, grace_until, over_capacity, cancellation_scheduled, updated_at FROM subscriptions WHERE workspace_id=$1', [workspaceId]))[0] ?? null
   const seats = await rows('SELECT s.user_id, u.name, u.email FROM seat_assignments s JOIN auth_user u ON u.id=s.user_id WHERE s.workspace_id=$1 ORDER BY u.email', [workspaceId])
   const role = await isPlatformOwner(actor) ? 'owner' : (await rows('SELECT role FROM workspace_members WHERE workspace_id=$1 AND user_id=$2', [workspaceId, actor.userId]))[0]?.role
   return { workspace, organisations, subscription, seats, permissions: { manageCustomers: ['owner', 'admin'].includes(role), viewCustomers: ['owner', 'admin', 'support'].includes(role), manageBilling: ['owner', 'admin', 'billing'].includes(role), viewStaff: ['owner', 'admin'].includes(role) } }
@@ -166,7 +166,7 @@ export async function assignSeat(actor: Principal, workspaceId: string, userId: 
       AND (status IN ('active','trialing') OR (status='past_due' AND grace_until>now()))
       AND (paid_until IS NULL OR paid_until>now() OR grace_until>now())`, [workspaceId], db))[0]
     const used = Number((await rows('SELECT count(*) AS count FROM seat_assignments WHERE workspace_id=$1', [workspaceId], db))[0]!.count)
-    if (!subscription || used >= subscription.purchased_seats) throw new ServiceError(409, 'no_available_seats', 'Purchase another user licence before assigning this person.')
+    if (!subscription || used >= subscription.purchased_seats) throw new ServiceError(409, 'no_available_seats', 'There are no available user licences. Review this workspace’s licence capacity before assigning this person.')
     await db.query('INSERT INTO seat_assignments (workspace_id,user_id) VALUES ($1,$2)', [workspaceId, userId])
     await audit(db, actor, workspaceId, 'seat.assigned', userId)
     return { assigned: true }

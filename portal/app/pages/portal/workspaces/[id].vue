@@ -9,10 +9,23 @@ const view = ref('customers')
 watch(() => data.value?.permissions?.viewStaff, allowed => { if (!allowed) view.value = 'customers' })
 const moreActivity = ref(false)
 const createOpen = ref(false), name = ref(''), quantity = ref(1), interval = ref('monthly'), auditOpen = ref(false), auditRows = ref<any[]>([])
-watch(() => data.value?.subscription?.purchased_seats, value => { quantity.value = Math.max(1, value ?? 1) }, { immediate: true })
+const pilotExpiry = ref('')
+function resetLicenceDraft() {
+  pilotExpiry.value = (data.value?.subscription?.paid_until ?? new Date(Date.now() + 30 * 86400000).toISOString()).slice(0, 10)
+  quantity.value = Math.max(1, data.value?.subscription?.purchased_seats ?? 1)
+}
+watch(() => data.value?.subscription, resetLicenceDraft, { immediate: true })
+async function reloadLicences() { await refresh(); resetLicenceDraft() }
+const pilotActive = computed(() => data.value?.subscription?.provider === 'pilot' && new Date(data.value.subscription.paid_until).getTime() > Date.now())
 const available = computed(() => Math.max(0, (data.value?.subscription?.purchased_seats ?? 0) - (data.value?.seats.length ?? 0)))
 async function create() { const result = await action(() => $fetch<any>(`/api/platform/workspaces/${id}/organisations`, { method: 'POST', body: { name: name.value } }), 'Customer added'); if (result) await navigateTo(`/portal/organisations/${result.id}`) }
 async function bill(operation: string) { const result = await action(() => $fetch<any>(`/api/platform/workspaces/${id}/billing/${operation}`, { method: 'POST', body: operation === 'checkout' ? { quantity: quantity.value, interval: interval.value } : operation === 'portal' ? {} : { quantity: quantity.value } })); if (result?.url) location.assign(result.url); else if (result) await refresh() }
+async function savePilot() {
+  const result = await action(() => $fetch(`/api/platform/workspaces/${id}/billing/pilot`, { method: 'POST', body: {
+    quantity: quantity.value, expiresAt: new Date(`${pilotExpiry.value}T23:59:59.000Z`).toISOString(), expectedUpdatedAt: data.value?.subscription?.updated_at ?? null,
+  } }), 'Pilot licences saved')
+  if (result) await refresh()
+}
 async function showAudit() { const result = await action(() => $fetch<any[]>(`/api/platform/workspaces/${id}/audit`)); if (result) { auditRows.value = result; moreActivity.value = result.length === 100; auditOpen.value = true } }
 async function moreAudit() { const before = auditRows.value.at(-1)?.id; const result = await action(() => $fetch<any[]>(`/api/platform/workspaces/${id}/audit`, { query: { before } })); if (result) { auditRows.value.push(...result); moreActivity.value = result.length === 100 } }
 </script>
@@ -29,7 +42,36 @@ async function moreAudit() { const before = auditRows.value.at(-1)?.id; const re
     <div v-if="view === 'customers'" class="mt-7 grid min-w-0 grid-cols-1 items-start gap-7" :class="data.permissions?.manageBilling ? 'xl:grid-cols-[minmax(0,1fr)_360px]' : ''"><section class="min-w-0"><div class="mb-5 flex items-center justify-between gap-3"><h2 class="text-xl font-semibold">Customers</h2><UButton v-if="data.permissions?.manageCustomers" icon="i-lucide-plus" class="min-h-11 sm:min-h-8" @click="createOpen = true">Add customer</UButton></div><div v-if="!data.organisations.length" class="border-t border-default py-9"><h3 class="font-semibold">No customers yet</h3><p class="mt-2 max-w-sm text-sm text-muted">Customers added by a workspace administrator appear here.</p></div><div v-else class="table-panel"><div class="table-scroll" tabindex="0" aria-label="Customers table"><table class="management-table min-w-[560px]">
         <caption class="sr-only">Customers in this workspace</caption><thead><tr><th scope="col">Customer</th><th scope="col">People</th><th scope="col">Devices</th><th v-if="data.permissions?.viewCustomers" scope="col">Details</th></tr></thead><tbody><tr v-for="org in data.organisations" :key="org.id"><td><NuxtLink v-if="data.permissions?.viewCustomers" :to="`/portal/organisations/${org.id}`" class="table-person hover:underline">{{ org.name }}</NuxtLink><span v-else class="table-person">{{ org.name }}</span></td><td>{{ org.people_count }}</td><td>{{ org.device_count }}</td><td v-if="data.permissions?.viewCustomers"><UButton :to="`/portal/organisations/${org.id}`" variant="ghost" color="neutral" size="sm">Open</UButton></td></tr></tbody>
       </table></div></div></section>
-      <section v-if="data.permissions?.manageBilling" aria-label="Subscription" class="min-w-0 border-t border-default pt-6 xl:border-t-0 xl:border-l xl:pt-0 xl:pl-7"><div class="mb-5 flex items-center justify-between gap-3"><h2 class="font-semibold">Subscription</h2><UBadge variant="soft" :color="data.subscription?.status === 'active' ? 'success' : 'neutral'">{{ data.subscription ? statusLabel(data.subscription.status) : 'Not started' }}</UBadge></div><div class="space-y-4"><UAlert v-if="data.subscription?.provider === 'test'" title="Local test subscription" description="No payment has been taken. These licences are for development only." color="warning" variant="soft" /><p class="text-sm leading-relaxed text-muted">Pay for named users. Administrator access is included, and users can sign in on all their devices.</p><UFormField label="User licences"><UInput v-model.number="quantity" type="number" :min="Math.max(1, data.seats.length)" :max="100000" class="w-full" :ui="{ base: 'min-h-11 text-base sm:min-h-8 sm:text-sm' }" /></UFormField><template v-if="!data.subscription || data.subscription.provider === 'test' || ['canceled','inactive'].includes(data.subscription.status)"><UFormField v-if="overview?.billing.checkout" label="Billing interval"><USelect v-model="interval" :items="[{ label: 'Monthly', value: 'monthly', disabled: !overview.billing.monthly }, { label: 'Annually', value: 'annual', disabled: !overview.billing.annual }]" class="w-full" /></UFormField><UButton v-if="overview?.billing.checkout" class="min-h-11 sm:min-h-8" block :loading="busy" @click="bill('checkout')">Continue to secure checkout</UButton><p v-else class="text-sm leading-relaxed text-muted">Paid subscriptions are not open yet. Your workspace and configuration are saved.</p><UButton v-if="overview?.billing.localTestBilling" class="min-h-11 sm:min-h-8" block color="warning" variant="outline" :loading="busy" @click="bill('test')">Apply local test licences</UButton></template><template v-else><UButton class="min-h-11 sm:min-h-8" block :loading="busy" @click="bill('quantity')">Update licence quantity</UButton><UButton class="min-h-11 sm:min-h-8" block variant="outline" color="neutral" :loading="busy" @click="bill('portal')">Invoices and payment details</UButton><p v-if="data.subscription.cancellation_scheduled" class="text-sm text-warning">This subscription is scheduled to end.</p></template><p class="text-xs leading-relaxed text-muted">Release assigned licences before reducing your quantity. Suspending a user does not change your bill.</p></div></section>
+      <section v-if="data.permissions?.manageBilling" aria-label="Subscription" class="min-w-0 border-t border-default pt-6 xl:border-t-0 xl:border-l xl:pt-0 xl:pl-7">
+        <div class="mb-5 flex items-center justify-between gap-3"><h2 class="font-semibold">Licences</h2><UBadge variant="soft" :color="data.subscription?.provider === 'pilot' ? (pilotActive ? 'success' : 'warning') : data.subscription?.status === 'active' ? 'success' : 'neutral'">{{ data.subscription?.provider === 'pilot' ? (pilotActive ? 'Pilot active' : 'Pilot expired') : data.subscription ? statusLabel(data.subscription.status) : 'Not started' }}</UBadge></div>
+        <div class="space-y-4">
+          <UAlert v-if="data.subscription?.provider === 'test'" title="Local test subscription" description="No payment has been taken. These licences are for development only." color="warning" variant="soft" />
+          <template v-if="data.subscription?.provider === 'pilot'">
+            <p class="text-sm leading-relaxed text-muted">No payment is required for this pilot. Managed access expires {{ activityDate(data.subscription.paid_until) }} unless the platform owner extends it.</p>
+          </template>
+          <p v-else class="text-sm leading-relaxed text-muted">One licence per named user, across all their devices. Administrator access is included.</p>
+          <template v-if="data.subscription?.provider !== 'pilot' || overview?.platformOwner">
+            <UFormField label="User licences"><UInput v-model.number="quantity" type="number" :disabled="busy" :min="Math.max(1, data.seats.length)" :max="data.subscription?.provider === 'pilot' || (overview?.platformOwner && !data.subscription) ? 1000 : 100000" class="w-full" :ui="{ base: 'min-h-11 text-base sm:min-h-8 sm:text-sm' }" /></UFormField>
+          </template>
+          <template v-if="overview?.platformOwner && (!data.subscription || data.subscription.provider === 'pilot')">
+            <UFormField label="Pilot expires (UTC)" help="Choose a future date within 90 days. Only the platform owner can grant or extend pilot licences."><UInput v-model="pilotExpiry" type="date" class="w-full" :disabled="busy" /></UFormField>
+            <UButton block class="min-h-11 sm:min-h-8" :loading="busy" :disabled="!pilotExpiry" @click="savePilot">{{ data.subscription?.provider === 'pilot' ? 'Update pilot licences' : 'Grant pilot licences' }}</UButton>
+            <UButton block color="neutral" variant="outline" :disabled="busy" @click="reloadLicences">Reload saved licences</UButton>
+          </template>
+          <template v-if="!data.subscription || data.subscription.provider === 'test' || (data.subscription.provider !== 'pilot' && ['canceled','inactive'].includes(data.subscription.status))">
+            <UFormField v-if="overview?.billing.checkout" label="Billing interval"><USelect v-model="interval" :items="[{ label: 'Monthly', value: 'monthly', disabled: !overview.billing.monthly }, { label: 'Annually', value: 'annual', disabled: !overview.billing.annual }]" class="w-full" /></UFormField>
+            <UButton v-if="overview?.billing.checkout" class="min-h-11 sm:min-h-8" block :loading="busy" @click="bill('checkout')">Continue to secure checkout</UButton>
+            <p v-else class="text-sm leading-relaxed text-muted">Paid subscriptions are not open yet. Your workspace and configuration are saved.</p>
+            <UButton v-if="overview?.billing.localTestBilling" class="min-h-11 sm:min-h-8" block color="warning" variant="outline" :loading="busy" @click="bill('test')">Apply local test licences</UButton>
+          </template>
+          <template v-else-if="data.subscription.provider === 'stripe'">
+            <UButton class="min-h-11 sm:min-h-8" block :loading="busy" @click="bill('quantity')">Update licence quantity</UButton>
+            <UButton class="min-h-11 sm:min-h-8" block variant="outline" color="neutral" :loading="busy" @click="bill('portal')">Invoices and payment details</UButton>
+            <p v-if="data.subscription.cancellation_scheduled" class="text-sm text-warning">This subscription is scheduled to end.</p>
+          </template>
+          <p class="text-xs leading-relaxed text-muted">Release assigned licences before reducing capacity.</p>
+        </div>
+      </section>
     </div>
   </template>
   <UModal v-if="data?.permissions?.manageCustomers && !loadError" v-model:open="createOpen" :dismissible="!busy" :close="!busy" :ui="{ close: 'size-11 sm:size-8' }" title="Add a customer" description="Each customer keeps their people and calling settings separate."><template #body><form class="space-y-5" @submit.prevent="create"><UAlert v-if="error" :title="error" color="error" /><UFormField label="Customer name" required><UInput v-model="name" :disabled="busy" required maxlength="160" autofocus class="w-full" :ui="{ base: 'min-h-11 text-base sm:min-h-8 sm:text-sm' }" placeholder="Example Company" /></UFormField><UButton class="min-h-11 sm:min-h-8" type="submit" :loading="busy" block>Add customer</UButton></form></template></UModal>

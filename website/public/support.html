@@ -27,6 +27,7 @@
 			<nav class="site-nav" aria-label="Main">
 				<a href="/support" aria-current="page">Support</a>
 				<a href="/privacy">Privacy</a>
+				<a href="/portal" data-management hidden>Management</a>
 				<a href="https://github.com/hybes/sipper">Source code</a>
 			</nav>
 		</div>
@@ -141,6 +142,13 @@
 				<li>Check the details and click Add to Sipper. On the extensions list you can tick several and add them together.</li>
 			</ol>
 			<p>The browser asks once whether it may open Sipper. Your FusionPBX user needs permission to see extension passwords; without it, the extension asks you to type the password.</p>
+
+			<section id="managed" data-management hidden>
+				<h2>Managed setup</h2>
+				<p>Open <a href="/portal">Management</a>, create your account and verify your email. Administrators must set up two-factor authentication under Security before creating a workspace. During the pilot, the platform owner grants time-limited licences; no payment is collected.</p>
+				<p>Create a customer, add its calling accounts, invite people and assign their licences and accounts. A person’s Device setup panel can create a single-use setup link for a compatible pilot app. Users sign in with their own invited email address.</p>
+				<p>The public desktop downloads are the standalone release. Request the current pilot build before testing managed sign-in. iOS and Android store releases and reliable background ringing have not been released. Device activity records show recent observations; they do not guarantee a phone is reachable.</p>
+			</section>
 
 			<h2 id="source">Building from source</h2>
 			<p>Sipper's <a href="https://github.com/hybes/sipper">source code</a> is on GitHub, with build instructions in its README. You'll need Xcode 16 or later, XcodeGen and Homebrew. Sign your build with an Apple Development certificate, even a free one: otherwise macOS asks for Keychain access to your SIP passwords after every rebuild.</p>

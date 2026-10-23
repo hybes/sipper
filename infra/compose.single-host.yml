@@ -1,0 +1,92 @@
+# Last overlay after compose.app.yml, compose.meetings.yml and compose.gateway.yml.
+# See SINGLE-HOST.md. Secrets and TLS material live outside the checkout.
+name: sipper
+
+x-db-ca: &db-ca
+  type: bind
+  source: ${SIPPER_PRIVATE_DIRECTORY:?Set the private deployment directory}/database/ca.crt
+  target: /run/database-ca/ca.crt
+  read_only: true
+  bind: { create_host_path: false }
+
+services:
+  postgres:
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    env_file:
+      - path: ${SIPPER_PRIVATE_DIRECTORY}/postgres.env
+        format: raw
+    command: [postgres, -c, ssl=on, -c, ssl_cert_file=/run/database-tls/server.crt, -c, ssl_key_file=/run/database-tls/server.key, -c, hba_file=/run/database-tls/pg_hba.conf]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ${SIPPER_PRIVATE_DIRECTORY}/database:/run/database-tls:ro
+      - ${SIPPER_PRIVATE_DIRECTORY}/database-init:/docker-entrypoint-initdb.d:ro
+    # No database port is published, even on the host loopback interface.
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U sipper_admin -d postgres]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: { driver: local, options: { max-size: 10m, max-file: "3" } }
+  migrate:
+    volumes: [*db-ca]
+    depends_on:
+      postgres: { condition: service_healthy }
+  portal:
+    volumes: [*db-ca]
+  email:
+    volumes: [*db-ca]
+  push:
+    volumes: [*db-ca]
+  meeting:
+    volumes: [*db-ca]
+  asterisk:
+    build: { context: ../gateway/asterisk }
+    profiles: [calling]
+    volumes: [*db-ca]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+  controller:
+    build: { context: ../gateway }
+    profiles: [calling]
+  website:
+    image: ${SIPPER_WEBSITE_IMAGE:-sipper-website:pilot}
+    build: { context: ../website }
+    env_file:
+      - path: ${SIPPER_PRIVATE_DIRECTORY}/website.env
+        format: raw
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8080/healthz', {signal: AbortSignal.timeout(4000)}).then(r => {if (!r.ok) process.exit(1)}).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: { driver: local, options: { max-size: 10m, max-file: "3" } }
+  proxy:
+    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    env_file:
+      - path: ${SIPPER_PRIVATE_DIRECTORY}/edge.env
+        format: raw
+    ports: ["80:80/tcp", "443:443/tcp", "443:443/udp"]
+    volumes:
+      - ./single-host/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${SIPPER_PRIVATE_DIRECTORY}/caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      website: { condition: service_healthy }
+      portal: { condition: service_healthy }
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp:rw,noexec,nosuid,size=16m]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    logging: { driver: local, options: { max-size: 10m, max-file: "3" } }
+
+volumes:
+  postgres-data:
+  caddy-config:

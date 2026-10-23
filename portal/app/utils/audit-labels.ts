@@ -51,6 +51,7 @@ const auditLabels: Record<string, string> = {
   'billing.checkout_started': 'Checkout started',
   'billing.quantity_requested': 'Licence quantity requested',
   'billing.local_test_enabled': 'Local test licences updated',
+  'billing.pilot_updated': 'Pilot licences updated',
   'setup_link.created': 'Setup link created',
   'setup_link.revoked': 'Setup link revoked',
   'setup_link.used': 'Setup link used',

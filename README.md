@@ -229,7 +229,8 @@ other. **Remove** ends just that person's call; **End conference** ends both.
 Transfer is available again after separating. iOS requests grouping, separation
 and call controls through CallKit; if resuming after separation is rejected,
 both calls stay on hold. CallKit system UI and physical audio still need device
-acceptance. Windows/Android conferencing is still being implemented.
+acceptance. Windows and Android also have local conference implementations;
+their platform READMEs record the tested paths and remaining device checks.
 
 Hold, answer and resume wait for SIP acceptance and negotiated media. A four-second
 timeout reports the failure and keeps new calls, answers and resumes blocked until
@@ -264,7 +265,12 @@ Network) and can save it to a file. Running the binary with
 ## Website
 
 `website/` is sipper.dev: plain HTML and CSS in `website/public` with no build
-step, served by a small Cloudflare Worker (`website/src/worker.js`) that
+step. The [single-host deployment](infra/SINGLE-HOST.md) serves it with
+`website/src/server.js` behind Caddy alongside management, the database and SIP
+gateway. `npm --prefix website start` previews it locally on port 8080; use
+`SIPPER_MANAGEMENT_ENABLED=true` only with working portal routes at the proxy.
+
+The earlier Cloudflare Worker (`website/src/worker.js`) remains available. It
 redirects www to the apex domain, adds security headers and answers
 `sipper.dev/download`.
 
@@ -300,18 +306,20 @@ extension/              Chrome extension and its tests (`node --test "extension/
 scripts/build-pjsip.sh  PJSIP build (static library into vendor/pjsip)
 tools/                  test SIP server, icon generator, packaging helpers
 docs/PROTOCOL.md        the hand-off contract between extension and app
-website/                sipper.dev: static site and its Cloudflare Worker
+website/                sipper.dev: static site, self-hosted server and legacy Worker
 windows/                Sipper for Windows: Electron app, PJSIP engine, installer (windows/README.md)
 .github/workflows/      Windows build, tests and installer
 ```
 
-## Managed platform (in development)
+## Managed platform and pilot readiness
 
 The managed portal and Mac, Windows, iOS and Android integration are being built
 alongside the standalone apps. See the [platform plan](docs/MANAGED-PLATFORM.md),
 [implementation evidence](docs/IMPLEMENTATION-STATUS.md),
 [portal setup](portal/README.md) and [deployment/recovery guide](infra/README.md).
-These local implementations are not a public paid-service launch.
+See the [current readiness and Bria comparison](docs/RELEASE-READINESS.md) before
+deployment or release. Expiring owner-granted pilots work without payments; paid
+signup remains disabled. These local implementations are not a public paid-service launch.
 
 ## Licences
 

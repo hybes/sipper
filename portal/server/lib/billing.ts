@@ -28,6 +28,7 @@ export async function checkout(actor: Principal, workspaceId: string, input: unk
     const workspace = await requireWorkspace(actor, workspaceId, 'billing', db)
     await db.query('SELECT id FROM workspaces WHERE id=$1 FOR UPDATE', [workspaceId])
     const sub = (await rows('SELECT * FROM subscriptions WHERE workspace_id=$1', [workspaceId], db))[0]
+    if (sub?.provider === 'pilot') throw new ServiceError(409, 'pilot_billing_review', 'Contact the platform owner to move this pilot to a paid subscription.')
     if (sub?.subscription_id && !['canceled', 'incomplete_expired'].includes(sub.status)) throw new ServiceError(409, 'subscription_exists', 'Manage the existing subscription instead of purchasing another.')
     if (sub?.checkout_id) {
       const pending = await stripe().checkout.sessions.retrieve(sub.checkout_id)
@@ -132,7 +133,7 @@ export async function configureTestBilling(actor: Principal, workspaceId: string
     await requireWorkspace(actor, workspaceId, 'billing', db)
     await db.query('SELECT id FROM workspaces WHERE id=$1 FOR UPDATE', [workspaceId])
     const existing = (await rows('SELECT provider FROM subscriptions WHERE workspace_id=$1', [workspaceId], db))[0]
-    if (existing?.provider === 'stripe') throw new ServiceError(409, 'real_billing_exists', 'Test billing cannot replace a Stripe subscription.')
+    if (existing && existing.provider !== 'test') throw new ServiceError(409, 'real_billing_exists', 'Test billing cannot replace a paid subscription or pilot.')
     const used = Number((await rows('SELECT count(*) AS count FROM seat_assignments WHERE workspace_id=$1', [workspaceId], db))[0]!.count)
     if (quantity < used) throw new ServiceError(409, 'seats_in_use', 'Release assigned licences before reducing test capacity.')
     await db.query(`INSERT INTO subscriptions (workspace_id,provider,status,purchased_seats,paid_until) VALUES ($1,'test','active',$2,now()+interval '30 days')

@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.js",
     "dev": "wrangler dev",
     "check": "wrangler deploy --dry-run",
     "test": "node --test \"test/*.test.js\"",
@@ -10,5 +11,8 @@
   },
   "devDependencies": {
     "wrangler": "^4.131.2"
+  },
+  "dependencies": {
+    "parse5": "8.0.1"
   }
 }

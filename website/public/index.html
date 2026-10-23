@@ -52,6 +52,7 @@
 			<nav class="site-nav" aria-label="Main">
 				<a href="/support">Support</a>
 				<a href="/privacy">Privacy</a>
+				<a href="/portal" data-management hidden>Management</a>
 				<a href="https://github.com/hybes/sipper">Source code</a>
 			</nav>
 		</div>
@@ -237,12 +238,21 @@
 			</div>
 		</section>
 
+		<section class="section" aria-labelledby="management-title" data-management hidden>
+			<div class="wrap">
+				<h2 id="management-title">Manage Sipper for your team</h2>
+				<p class="section-intro">The management pilot lets businesses and resellers organise customers, invite people, assign calling accounts and review device activity. Managed users sign in with their own email; their personal SIP accounts stay separate.</p>
+				<p>Pilot licences are granted by the platform owner. Paid signup is closed. Mobile distribution and background ringing are still being tested; the public desktop downloads below are the standalone release.</p>
+				<p><a class="button" href="/portal">Open management</a> <a href="/support#managed">Managed setup</a></p>
+			</div>
+		</section>
+
 		<section class="section band" aria-labelledby="privacy">
 			<div class="wrap">
-				<h2 id="privacy">No Sipper account. No tracking.</h2>
-				<p class="section-intro">Sipper has no servers of its own. Your calls travel between your computer and your phone provider, and nothing about you or your calls is sent to the developer.</p>
+				<h2 id="privacy">Use your own SIP account.</h2>
+				<p class="section-intro">In standalone mode, your calls travel between your computer and your phone provider. Personal SIP accounts, contacts and recordings stay on your computer.</p>
 				<ul class="facts">
-					<li><strong>Nothing to sign up for.</strong> You sign in to your own SIP provider, not to Sipper.</li>
+					<li><strong>No Sipper login for standalone calls.</strong> Add the SIP account you already have.</li>
 					<li><strong>No analytics, ads or trackers.</strong> Not in the app, and not on this website.</li>
 					<li><strong>Passwords stay locked away.</strong> On a Mac they're kept in the Keychain. On Windows they're encrypted so only your Windows account can read them.</li>
 					<li><strong>Recordings stay on your computer.</strong> They're saved to the folder you choose and never synced.</li>

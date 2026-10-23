@@ -1,0 +1,10 @@
+[Unit]
+Description=Renew Sipper SIP certificate after draining calls
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/sipper/infra/single-host/sync-sip-certificate.py
+TimeoutStartSec=infinity
+UMask=0077

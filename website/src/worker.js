@@ -23,24 +23,12 @@
 // Anything that should only appear after a release must also carry `hidden`, so the page still
 // reads correctly if the Worker is bypassed.
 
-import { PLATFORMS, detectPlatform, downloadURLs } from './platform.js';
+import { detectPlatform, downloadURLs } from './platform.js';
 import { isPortalPath, proxyPortal } from './portal.js';
+import { SECURITY_HEADERS, PLATFORM_VARY } from './headers.js';
+import { pageElementAction, PAGE_ATTRIBUTES } from './page.js';
 
 const CANONICAL_HOST = 'sipper.dev';
-
-const SECURITY_HEADERS = {
-	'Content-Security-Policy':
-		"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; " +
-		"object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-	'Cross-Origin-Opener-Policy': 'same-origin',
-	'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()',
-	'Referrer-Policy': 'strict-origin-when-cross-origin',
-	'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
-	'X-Content-Type-Options': 'nosniff',
-};
-
-// Request headers that decide which platform a response is for.
-const PLATFORM_VARY = ['Sec-CH-UA-Platform', 'User-Agent'];
 
 const DOWNLOAD_ROUTE = /^\/download(?:\/(mac|windows))?\/?$/;
 
@@ -61,7 +49,6 @@ export default {
 		if (isPortalPath(url.pathname)) return proxyPortal(request, env);
 
 		const downloads = downloadURLs(env);
-		const launched = PLATFORMS.some((platform) => downloads[platform]);
 		const visitor = detectPlatform(request.headers.get('Sec-CH-UA-Platform'), request.headers.get('User-Agent'));
 
 		const downloadRoute = url.pathname.match(DOWNLOAD_ROUTE);
@@ -74,7 +61,7 @@ export default {
 		}
 
 		let assetRequest = request;
-		if (launched && looksLikePage(url.pathname)) {
+		if (looksLikePage(url.pathname)) {
 			// A rewritten page no longer matches the stored file, so its ETag must not answer revalidation.
 			assetRequest = new Request(request);
 			assetRequest.headers.delete('If-None-Match');
@@ -83,25 +70,16 @@ export default {
 
 		let response = await env.ASSETS.fetch(assetRequest);
 		const isHTML = (response.headers.get('Content-Type') || '').startsWith('text/html');
-		const rewrite = launched && isHTML;
+		const rewrite = isHTML;
 
 		if (rewrite) {
-			const isAvailable = (platform) => (platform ? Boolean(downloads[platform]) : launched);
 			response = new HTMLRewriter()
-				.on('[data-prelaunch]', {
+				.on(PAGE_ATTRIBUTES.map(name => `[${name}]`).join(', '), {
 					element: (el) => {
-						if (isAvailable(el.getAttribute('data-prelaunch'))) el.remove();
-					},
-				})
-				.on('[data-launched]', {
-					element: (el) => {
-						if (isAvailable(el.getAttribute('data-launched'))) el.removeAttribute('hidden');
-						else el.remove();
-					},
-				})
-				.on('[data-visitor]', {
-					element: (el) => {
-						if (!el.getAttribute('data-visitor').split(/\s+/).includes(visitor)) el.remove();
+						const attributes = Object.fromEntries(PAGE_ATTRIBUTES.filter(name => el.hasAttribute(name)).map(name => [name, el.getAttribute(name)]));
+						const action = pageElementAction(attributes, { downloads, visitor, management: Boolean(env.PORTAL_ORIGIN && env.SIPPER_EDGE_SHARED_SECRET) });
+						if (action === 'remove') el.remove();
+						if (action === 'show') el.removeAttribute('hidden');
 					},
 				})
 				.transform(response);

@@ -4,6 +4,7 @@ import { ServiceError } from '../../lib/errors'
 import * as platform from '../../lib/platform'
 import * as management from '../../lib/management'
 import * as billing from '../../lib/billing'
+import { configurePilot } from '../../lib/pilot'
 import { managePeople } from '../../lib/bulk'
 import { createSetupLink, revokeSetupLink } from '../../lib/setup-links'
 import * as staff from '../../lib/workspace-staff'
@@ -67,6 +68,7 @@ export default defineEventHandler(async event => {
         if (method === 'DELETE') return await platform.releaseSeat(actor, id, userId(parts[3]))
       }
       if (parts.length === 4 && parts[2] === 'billing' && method === 'POST') {
+        if (parts[3] === 'pilot') return await configurePilot(actor, id, body)
         if (parts[3] === 'checkout') return await billing.checkout(actor, id, body)
         if (parts[3] === 'portal') return await billing.billingPortal(actor, id)
         if (parts[3] === 'quantity') return await billing.changeQuantity(actor, id, body)

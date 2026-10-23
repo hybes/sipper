@@ -1,5 +1,10 @@
 # Deploying and recovering Sipper management
 
+For the selected Hetzner host and domain, use the
+[single-host guide](SINGLE-HOST.md). It adds the website, Caddy and a private TLS
+database to the component deployments below. The current 1 GB host is explicitly
+for preparation only; see the guide before starting services or changing DNS.
+
 These assets package the portal, migrations and background workers. They have a
 disposable local rehearsal; they are not evidence of a production deployment or
 permission to start public sales. Website-to-portal routing, origin authentication

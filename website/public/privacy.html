@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Privacy policy · Sipper</title>
-	<meta name="description" content="How Sipper, its browser extension and sipper.dev handle your data. Sipper collects no personal data and has no analytics or tracking.">
+	<meta name="description" content="How standalone Sipper apps, managed accounts, messages, meetings and sipper.dev handle your data.">
 	<link rel="canonical" href="https://sipper.dev/privacy">
 	<meta name="theme-color" content="#fbfbf9" media="(prefers-color-scheme: light)">
 	<meta name="theme-color" content="#0e1516" media="(prefers-color-scheme: dark)">
@@ -27,6 +27,7 @@
 			<nav class="site-nav" aria-label="Main">
 				<a href="/support">Support</a>
 				<a href="/privacy" aria-current="page">Privacy</a>
+				<a href="/portal" data-management hidden>Management</a>
 				<a href="https://github.com/hybes/sipper">Source code</a>
 			</nav>
 		</div>
@@ -35,11 +36,11 @@
 	<main id="main" class="page">
 		<div class="wrap prose">
 			<h1>Privacy policy</h1>
-			<p class="updated">Last updated 14 September 2026</p>
-			<p>Sipper is a phone app for Mac and Windows made by Ben Hybert. This policy covers the Sipper apps, the Sipper browser extension and this website, sipper.dev.</p>
+			<p class="updated">Last updated 23 October 2026</p>
+			<p>Sipper is a phone app made by Ben Hybert. This page describes data handled by the apps, optional management service, browser extension and sipper.dev.</p>
 
 			<h2 id="summary">The short version</h2>
-			<p>Sipper doesn't collect personal data. There is no Sipper account, and the app contains no analytics, advertising or tracking code. Your SIP details, contacts, call history and recordings are never sent to the developer.</p>
+			<p>Standalone calling needs no Sipper account. Personal SIP details, contacts, call history and recordings stay in the app’s local storage, apart from optional iCloud sync. Signing in to a managed organisation uses the Sipper service and the information described below. Sipper contains no advertising or third-party analytics.</p>
 
 			<h2 id="on-your-mac">What the app stores on your computer</h2>
 			<ul>
@@ -57,6 +58,12 @@
 				<li>A STUN server, only if you enter one.</li>
 			</ul>
 			<p>These servers belong to your phone provider or organisation. Their own privacy policies cover the calls and call records they keep.</p>
+
+			<h2 id="managed">Managed organisations</h2>
+			<p>If you sign in to a managed organisation, Sipper stores your name, email, membership, assigned licences and calling configuration. Authentication and device records include sign-in and request times, IP addresses, app and operating-system versions, configuration results and reported registration status. Your organisation’s administrators can inspect their management records; platform owners can administer the service.</p>
+			<p>Managed SIP credentials are encrypted on the service. Direct provisioning also delivers them to the app’s protected storage. Gateway mode keeps upstream credentials on the service and carries calls through Sipper’s gateway. Personal accounts and local recordings are not uploaded by managed provisioning.</p>
+			<p>Company directories, manual availability, Do Not Disturb and any colleague status you choose to share use the management service. Conversation content is available to its participants and encrypted in server storage; it is not end-to-end encrypted. Meeting media passes through the configured meeting service. Sipper does not provide server-side meeting recording.</p>
+			<p>When enabled, mobile notifications register a device token with Sipper and use Apple or Google delivery services. Message alerts contain a generic notice and opaque references, not message text. Message and call metadata expire under the service’s retention settings; backups have their own retention. Revoking a device stops new managed access but does not erase all account, audit or backup records.</p>
 
 			<h2 id="icloud">iCloud sync</h2>
 			<p>The Mac version you download from this site doesn't include iCloud sync, and the Windows version has no sync at all. If you build Sipper yourself with iCloud enabled and turn sync on, your profiles, accounts and contacts, plus your call history if you include it, are stored in Sipper's private container in your iCloud account, and your SIP passwords are synced by iCloud Keychain. Apple holds that data under its own terms; the developer can't access it. Recordings and settings specific to each Mac are never synced.</p>
@@ -76,7 +83,7 @@
 			</ul>
 
 			<h2 id="website">This website</h2>
-			<p>sipper.dev uses no cookies, analytics, third-party scripts or web fonts. It's hosted on Cloudflare, which processes technical information such as IP addresses to deliver the site and protect it from abuse, as described in <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare's privacy policy</a>. Sipper downloads and the source code are served by GitHub, under the <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub General Privacy Statement</a>.</p>
+			<p>The public information pages use no analytics, third-party scripts, web fonts or advertising cookies. Hosting and network providers process technical information such as IP addresses to deliver requests. Management uses authentication cookies and stores security and administrative activity. Downloads and source code linked to GitHub are covered by the <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub General Privacy Statement</a>.</p>
 
 			<h2 id="support">If you ask for support</h2>
 			<p>Support is handled through GitHub issues, which are public. Do not include passwords, account exports, private server addresses or unredacted call logs. GitHub handles your issue and account information under its own privacy policy.</p>

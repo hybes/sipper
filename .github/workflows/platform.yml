@@ -1,0 +1,118 @@
+name: Managed platform
+
+on:
+  push:
+    branches: [main, 'codex/**']
+    paths:
+      - 'portal/**'
+      - 'website/**'
+      - 'gateway/**'
+      - 'infra/**'
+      - '.github/workflows/platform.yml'
+  pull_request:
+    paths:
+      - 'portal/**'
+      - 'website/**'
+      - 'gateway/**'
+      - 'infra/**'
+      - '.github/workflows/platform.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify and package Linux services
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install locked dependencies
+        run: |
+          corepack pnpm@12.5.1 --dir portal install --frozen-lockfile --ignore-scripts
+          npm --prefix website ci --ignore-scripts --no-audit --no-fund
+          npm --prefix gateway ci --ignore-scripts --no-audit --no-fund
+
+      - name: Start isolated development database and mail sink
+        run: |
+          docker compose -f infra/compose.dev.yml up -d --wait
+          docker compose -f infra/compose.dev.yml exec -T postgres psql -U sipper -d postgres -c 'CREATE DATABASE sipper_test'
+          node --input-type=module <<'JS'
+          import { writeFileSync } from 'node:fs';
+          import { randomBytes } from 'node:crypto';
+          const values = {
+            NODE_ENV: 'test', SIPPER_BASE_URL: 'http://localhost:3100',
+            DATABASE_URL: 'postgresql://sipper:sipper_local_only@127.0.0.1:5547/sipper_test',
+            BETTER_AUTH_SECRET: randomBytes(48).toString('base64url'),
+            SIPPER_ENCRYPTION_KEY_ID: 'v1',
+            SIPPER_ENCRYPTION_KEYS: JSON.stringify({v1: randomBytes(32).toString('base64')}),
+            SMTP_HOST: '127.0.0.1', SMTP_PORT: '1029', SMTP_SECURE: 'false',
+            MAIL_FROM: 'Sipper CI <accounts@example.invalid>',
+            SIPPER_ALLOW_TEST_BILLING: 'true', SIPPER_REQUIRE_ADMIN_MFA: 'true',
+          };
+          writeFileSync('portal/.env', Object.entries(values).map(([k,v]) => `${k}=${v}\n`).join(''), {mode: 0o600});
+          JS
+
+      - name: Service regression tests
+        run: |
+          corepack pnpm@12.5.1 --dir portal test
+          corepack pnpm@12.5.1 --dir portal typecheck
+          npm --prefix website test
+          npm --prefix gateway test
+
+      - name: Build production images for the server
+        run: |
+          docker build -t sipper-platform:${GITHUB_SHA} portal
+          docker build -t sipper-website:${GITHUB_SHA} website
+          docker build -t sipper-controller:${GITHUB_SHA} gateway
+          docker build -t sipper-asterisk:${GITHUB_SHA} gateway/asterisk
+          docker build -t sipper-recovery:${GITHUB_SHA} infra/recovery
+
+      - name: Rehearse production settings and ingress
+        env:
+          SIPPER_REHEARSAL_APP_IMAGE: sipper-platform:${{ github.sha }}
+          SIPPER_REHEARSAL_WEBSITE_IMAGE: sipper-website:${{ github.sha }}
+        run: |
+          python3 infra/single-host/test-certificate.py
+          python3 infra/single-host/test-ingress.py
+          python3 infra/single-host/test-runtime.py
+
+      - name: Package reviewed server images
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p release-images
+          git rev-parse HEAD > release-images/source-commit.txt
+          docker image inspect --format '{{.RepoTags}} {{.Id}} {{.Architecture}}' \
+            sipper-platform:${GITHUB_SHA} sipper-website:${GITHUB_SHA} \
+            sipper-controller:${GITHUB_SHA} sipper-asterisk:${GITHUB_SHA} \
+            sipper-recovery:${GITHUB_SHA} > release-images/images.txt
+          docker save sipper-platform:${GITHUB_SHA} sipper-website:${GITHUB_SHA} \
+            sipper-controller:${GITHUB_SHA} sipper-asterisk:${GITHUB_SHA} \
+            sipper-recovery:${GITHUB_SHA} | gzip -1 > release-images/sipper-linux-amd64.tar.gz
+          cd release-images
+          sha256sum sipper-linux-amd64.tar.gz > sipper-linux-amd64.tar.gz.sha256
+
+      - uses: actions/upload-artifact@v7
+        if: github.event_name != 'pull_request'
+        with:
+          name: sipper-linux-amd64-${{ github.sha }}
+          path: release-images/
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Remove disposable development services
+        if: always()
+        run: docker compose -f infra/compose.dev.yml down --volumes
