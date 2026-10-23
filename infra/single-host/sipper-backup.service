@@ -1,0 +1,13 @@
+[Unit]
+Description=Back up Sipper database and private configuration with age encryption
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/sipper/infra/single-host/backup.py
+TimeoutStartSec=30min
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

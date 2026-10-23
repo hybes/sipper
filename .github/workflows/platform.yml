@@ -87,6 +87,7 @@ jobs:
           SIPPER_REHEARSAL_RECOVERY_IMAGE: sipper-recovery:${{ github.sha }}
         run: |
           python3 infra/single-host/test-certificate.py
+          python3 infra/single-host/test-backup.py
           python3 infra/single-host/test-ingress.py
           python3 infra/single-host/test-ingress.py --shared
           python3 infra/single-host/test-runtime.py

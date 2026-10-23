@@ -244,6 +244,49 @@ and restore-drill failure. Successful encryption does not authenticate who creat
 an archive: restore only a trusted backup from protected storage. PostgreSQL
 archives can contain executable SQL.
 
+### Single-host scheduled backups
+
+`single-host/backup.py` uses the existing recovery image to create a database
+dump and an encrypted archive of `/etc/sipper`. It uses the application database
+role over verified TLS. The recovery identity stays off the server; only the
+public age recipients file is mounted. Neither plaintext dumps nor credentials
+are placed in command arguments. The configuration archive contains only Sipper's
+private directory, never the shared proxy's ACME store.
+
+Install the public recipient at `/etc/sipper/backup-recipients.txt`, mode 0600,
+owned by UID/GID 70 for the recovery container. Create `/var/backups/sipper` as
+root with mode 0700. Write `/etc/sipper/backup.env` with mode 0600:
+
+```dotenv
+SIPPER_BACKUP_IMAGE=sipper-recovery:FULL_REVIEWED_40_CHARACTER_COMMIT
+SIPPER_BACKUP_NETWORK=sipper_default
+SIPPER_BACKUP_DIRECTORY=/var/backups/sipper
+```
+
+Load and verify that exact recovery image first. The helper never pulls an image
+or replaces an existing snapshot. A timestamped directory becomes visible only
+after both encrypted archives and their SHA-256 manifest are complete. Any failed
+stage removes its own partial directory and leaves earlier backups alone. A lock
+prevents overlapping runs. Each backup container is limited to 512 MiB and one
+CPU. The configuration archive is for cold recovery; it does not preserve live
+calls or the controller's separate recovery journal.
+
+```sh
+python3 infra/single-host/test-backup.py
+python3 infra/single-host/backup.py
+install -m 0644 infra/single-host/sipper-backup.service /etc/systemd/system/
+install -m 0644 infra/single-host/sipper-backup.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now sipper-backup.timer
+```
+
+The timer runs daily at 03:30 UTC with up to ten minutes of jitter, and catches
+missed runs after downtime. It does not upload, prune or send alerts. Copy only
+complete timestamped directories off-host, verify their manifests, and retain the
+recovery identity separately. Configure regular off-host transfer, retention and
+failure alerts for the required recovery objectives. A local daily copy alone
+does not protect against loss of the server.
+
 ## Restore procedure
 
 1. Create a **new, empty, isolated database** owned by the intended application
