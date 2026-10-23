@@ -238,8 +238,9 @@ docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges:true
 ```
 
 Upload only completed ciphertext to protected off-site storage with versioning
-and retention. Choose a schedule from the approved recovery-point objective;
-none is installed by these files. Alert on backup age, failure, storage capacity
+and retention. Choose a schedule for the required recovery-point objective;
+the base recovery image installs no schedule. The single-host helper below
+provides daily scheduling. Alert on backup age, failure, storage capacity
 and restore-drill failure. Successful encryption does not authenticate who created
 an archive: restore only a trusted backup from protected storage. PostgreSQL
 archives can contain executable SQL.

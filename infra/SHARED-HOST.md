@@ -1,6 +1,6 @@
 # Sipper on cd-main
 
-The owner selected `cd-main` for the pilot on 23 October 2026. Everything will
+The owner selected `cd-main` for the pilot on 23 October 2026. The services now
 run on that Docker host, with Plunk's existing Connect Dorset project for email
 and payments disabled. The old 1 GB Hetzner server remains preparation only.
 
@@ -15,35 +15,63 @@ The host interface confirms public IPv4 `176.227.215.65`; TCP 80, 443 and 7882
 are reachable from outside the server. WebRTC media acceptance remains open.
 
 **Current state:** source is installed at `/opt/sipper`, private settings at
-`/etc/sipper`, and all five AMD64 images from
+`/etc/sipper`, and the five baseline AMD64 images from
 `288a338d63b27aeb11d5938adcee3ecb8e078da4` are loaded. The downloaded archive
 checksum and all image configuration digests match the passing
 [CI release](https://github.com/hybes/sipper/actions/runs/39949197712).
-The executable Compose configuration includes the mount-parsing fix in
-`bbfcec47df4500c40633b2031cc3106e518a3532`. All 37 migrations and restricted
-gateway grants completed. PostgreSQL, website, portal, email/push/meeting workers,
-meeting media/signalling and the edge are running. Calling remains stopped.
+The executable source includes the mount-parsing fix in `bbfcec4`, the idle
+gateway support in `6dc471c` and the encrypted backup tooling in `ce7e4d3`.
+Controller and meeting-signalling services use the AMD64 controller image from
+`6dc471cfe7abd190a7fbacdc07177fdfda28aad1`. Its local Buildx build, archive checksum
+and image configuration digest are recorded under
+`/opt/sipper-staging/6dc471cfe7abd190a7fbacdc07177fdfda28aad1/gateway`.
+This controller was built locally from the committed source, separately from
+the subsequently passing [CI run](https://github.com/hybes/sipper/actions/runs/39958618767).
+All 37 migrations and restricted gateway grants completed. PostgreSQL, website,
+portal, email/push/meeting workers,
+meeting media/signalling, the edge, Asterisk and the controller are running.
+The owner explicitly requested installation without a PBX or pilot calls. The
+gateway has a current controller lease/heartbeat, no endpoints and an empty
+upstream allowlist. It reports **not ready for calls** and denies all upstream
+routes. No registration or external call was attempted.
 
 The approved Connect Dorset Plunk key is stored in `/root/sipper-smtp.env` with
 mode 0600 and copied into the private portal configuration. SMTP AUTH returned
 235 over verified TLS 1.3; no email was sent. Plunk marks `sipper.dev` as verified.
 Account email delivery, the owner account and MFA are still pending.
 
-**Public cutover is blocked:** DNS-only A records for `sip` and `meet` now point
-to `176.227.215.65` and match authoritative/public resolvers. The old Worker owns
-the `sipper.dev` and `www.sipper.dev` placeholder AAAA records. DNS Manager
-rejected editing them as read-only; both remain unchanged. Sign in to Cloudflare,
-remove only those two old Worker custom-domain bindings, then create the intended
-DNS-only A records. A Cloudflare sign-in tab is open in the owner's Chromium.
-The complete public HTTPS certificate, SIP certificate synchronisation and public
-browser acceptance must follow that cutover. No live public launch is claimed.
+**Public cutover is complete:** only the old website Worker's `sipper.dev` and
+`www.sipper.dev` custom-domain bindings were removed. The Worker and its old
+versions remain available. DNS-only A records for `@`, `www`, `sip` and `meet`
+point to `176.227.215.65`; no AAAA records remain for those names. Both Cloudflare
+nameservers and `1.1.1.1` agree. All six Plunk DNS records were preserved.
+Public HTTPS verifies for all four names using a Sipper-only certificate expiring
+21 January 2027. The public SIP TLS handshake on port 5061 also verifies.
+The certificate-sync service succeeded and its six-hour timer is enabled.
 
 Checks against the running services pass for the website, support/privacy pages,
 portal sign-in/sign-up, health and OAuth discovery through the actual trusted
-proxy. Direct edge access is rejected, PostgreSQL uses TLS with a non-superuser
+proxy. Public Chromium checks at 1440px and 390px show no broken images, document
+overflow or browser errors; empty signup is rejected before any request.
+Download redirects still target the existing standalone 0.1.0 releases. Missing
+or invalid meeting tokens receive 403; unauthenticated management/gateway APIs
+receive 401. Direct edge access is rejected, PostgreSQL uses TLS with a non-superuser
 application role, and payment settings are disabled. Coolify's existing public
-HTTPS endpoint still responds. These checks do not establish account workflows,
-public Sipper HTTPS, working calls or meeting audio/video.
+HTTPS endpoint still responds. These checks do not establish verified account
+workflows, working calls or meeting audio/video.
+
+Encrypted database/configuration backups now run daily at 03:30 UTC with up to
+ten minutes of jitter. The first snapshot, `20261023T132753Z`, is under
+`/var/backups/sipper`; its two archive checksums match the manifest. The recovery
+identity is held at `infra/.private/recovery/age-identity.txt` in the original
+Mac checkout, outside Git, and only its public
+recipient is on cd-main. Copying the encrypted archives to the Mac and verifying
+decryption remain pending explicit approval. The archives have not left the
+server. Regular off-host transfer, retention and alert delivery remain open;
+the daily local backup alone is not off-host recovery.
+The backup changes also passed the full
+[managed-platform CI run](https://github.com/hybes/sipper/actions/runs/39961288034),
+including ingress, production runtime and controlled recovery rehearsals.
 
 ## Proxy and service layout
 
@@ -80,8 +108,9 @@ First inspect the actual proxy network, container IP, certificate resolver and
 ACME storage path. Keep the existing proxy and other applications running.
 Check free disk space, memory, and whether another service already uses TCP
 5061/7882 or UDP 20000–20199/7883. Those media ports must be reachable directly;
-an HTTPS proxy does not carry the media. Keep calling stopped until the actual
-PBX and certificate are configured.
+an HTTPS proxy does not carry the media. Keep the gateway stopped until its
+certificate is configured. It may then run with an empty PBX allowlist, which
+keeps calling unavailable.
 
 Stage reviewed source at `/opt/sipper`, load matching AMD64 images, and put the
 approved Plunk SMTP settings in `/root/sipper-smtp.env` with mode 0600. The exact
@@ -110,25 +139,30 @@ deployment or rotate its authentication/encryption keys during updates. Only
 `config --quiet` is suitable for shared logs; full Compose output includes
 secrets. Use `--upstreams` with approved PBX hostnames when preparing calling.
 
-The installed images on `cd-main` use release
+The baseline images on `cd-main` use release
 `288a338d63b27aeb11d5938adcee3ecb8e078da4`. The archive, checksum, CI manifest and
 verified deployed-image manifest are retained under
 `/opt/sipper-staging/288a338d63b27aeb11d5938adcee3ecb8e078da4/linux`.
-The later Compose mount fix changes no application image. Record source and image
-revisions separately. The older Hetzner preparation still has its earlier images.
+The controller and meeting-signalling image uses the later `6dc471c` revision
+described above. Compose and backup changes need no application image rebuild.
+Record source and image revisions separately. The older Hetzner preparation
+still has its earlier images.
 
 ## Start and cut over
 
 After the host checks and private settings are complete, use the migration,
 database grant and startup steps in the [dedicated-host guide](SINGLE-HOST.md#start-after-preparation-and-capacity-checks).
 The same wrapper selects the shared overlay from the private deployment file.
-Leave the calling profile stopped until the SIP certificate and actual PBX
-acceptance are ready. Payments remain disabled.
+Start the calling profile after installing the SIP certificate. With no PBX
+approved, leave `SIPPER_UPSTREAM_HOSTS` empty: the controller stays online but
+reports not ready, and no upstream routes are created. When a PBX is selected,
+approve its exact hostname and recreate the controller before enabling accounts.
+Payments remain disabled.
 
-The intended DNS-only A records for `@`, `www`, `sip` and `meet` point to
-`176.227.215.65`, subject to confirming that public address. Preserve the six
-Plunk email records. Remove the old placeholder AAAA records and retire the
-old website Worker routes at cutover. Test the website, management login, native
+The DNS-only A records for `@`, `www`, `sip` and `meet` now point to
+`176.227.215.65`. The six Plunk email records are preserved; the old placeholder
+AAAA records and website Worker custom-domain bindings are removed. Test the
+website, management login, native
 OAuth discovery and meeting admission from outside the server. Verify existing
 applications still serve normally after Sipper is added.
 
@@ -142,9 +176,11 @@ gateway is stopped. The existing timer and graceful call drain remain applicable
 
 ## Acceptance and operations
 
-Finish owner email/MFA setup, pilot licensing, real PBX/media tests, signed app
-distribution, encrypted off-host backups, key escrow, restore drills and alerts
-before accepting the pilot. Shared hosting also means host restarts and resource
+Finish owner email/MFA setup, pilot licensing, signed app distribution, regular
+off-host backups, key escrow, restore drills and alerts before accepting the
+pilot. PBX/media acceptance was explicitly deferred by the owner; deployment
+does not establish interoperability. Shared hosting also means host restarts and
+resource
 problems can affect Sipper alongside the other applications. The broader gaps
 remain in [release readiness](../docs/RELEASE-READINESS.md).
 
@@ -152,6 +188,7 @@ Local checks for this deployment are:
 
 ```sh
 python3 infra/single-host/test-certificate.py
+python3 infra/single-host/test-backup.py
 python3 infra/single-host/test-ingress.py
 python3 infra/single-host/test-ingress.py --shared
 python3 infra/single-host/test-runtime.py

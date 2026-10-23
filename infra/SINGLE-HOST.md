@@ -36,8 +36,9 @@ added there. The six email records in
 [`single-host/plunk-sipper.dev.zone`](single-host/plunk-sipper.dev.zone) are
 published and match both Cloudflare authoritative nameservers and `1.1.1.1`.
 They include three DKIM CNAMEs, the `plunk` bounce-domain MX/SPF records and a
-DMARC policy with no enforcement during the pilot. The existing website AAAA
-records remain unchanged. Plunk confirmed the sending domain as verified on
+DMARC policy with no enforcement during the pilot. Website DNS was subsequently
+cut over to cd-main as recorded in the shared-host guide. Plunk confirmed the
+sending domain as verified on
 23 October 2026.
 
 Docker on this host uses the containerd image store and reports manifest IDs;
@@ -92,7 +93,8 @@ python3 infra/single-host/prepare.py \
 ```
 
 Replace the release and PBX placeholders with reviewed values. Omit `--upstreams`
-only while preparing a deployment whose calling profile will remain stopped.
+when no PBX is approved. After its certificate is installed, the gateway may run
+with that empty allowlist; it reports not ready for calls and creates no routes.
 The script refuses to overwrite an existing directory. It generates independent
 keys, a private database CA/server certificate, database roles and environment
 files. Preserve all generated authentication and encryption keys during updates.
@@ -150,7 +152,8 @@ sh infra/single-host/compose.sh --profile meetings up -d --wait
 Caddy issues and renews public certificates after DNS reaches the host. Verify
 the website, all management routes and `https://sipper.dev/api/health` from
 outside the server. The last command deliberately leaves the calling profile
-off until a SIP certificate is installed and the actual upstream is approved:
+off until a SIP certificate is installed. It may then run idle with an empty
+upstream allowlist, as requested for the current cd-main installation:
 
 ```sh
 python3 infra/single-host/sync-sip-certificate.py
