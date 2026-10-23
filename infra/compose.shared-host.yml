@@ -1,0 +1,82 @@
+# Last overlay on a shared Docker host with an existing Traefik HTTPS proxy.
+# Only the Sipper edge joins the existing proxy network. All other services
+# remain on the private Sipper network; media ports are published separately.
+services:
+  postgres:
+    mem_limit: 1g
+    cpus: 2
+    pids_limit: 256
+  migrate:
+    mem_limit: 1g
+    cpus: 1
+    pids_limit: 128
+  portal:
+    ports: !reset []
+    mem_limit: 1g
+    cpus: 2
+    pids_limit: 128
+  email:
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+  push:
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+  meeting:
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+  asterisk:
+    mem_limit: 1g
+    cpus: 2
+    pids_limit: 512
+  controller:
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 128
+  meetings-media:
+    mem_limit: 2g
+    cpus: 4
+    pids_limit: 512
+  meetings-signalling:
+    ports: !reset []
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+  website:
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+  proxy:
+    ports: !reset []
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    volumes:
+      - ./shared-host/Caddyfile:/etc/caddy/Caddyfile:ro
+    networks: [default, shared-proxy]
+    environment:
+      SIPPER_TRAEFIK_IP: ${SIPPER_TRAEFIK_IP:?Set the exact address of the existing Traefik container}
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: ${SIPPER_PROXY_NETWORK:?Set the existing proxy network}
+      traefik.http.routers.sipper-http.entrypoints: ${SIPPER_TRAEFIK_HTTP_ENTRYPOINT:-http}
+      traefik.http.routers.sipper-http.rule: Host(`sipper.dev`) || Host(`www.sipper.dev`) || Host(`sip.sipper.dev`) || Host(`meet.sipper.dev`)
+      traefik.http.routers.sipper-http.service: sipper-edge
+      traefik.http.routers.sipper-http.middlewares: sipper-https
+      traefik.http.middlewares.sipper-https.redirectscheme.scheme: https
+      traefik.http.middlewares.sipper-https.redirectscheme.permanent: "true"
+      traefik.http.routers.sipper-https.entrypoints: ${SIPPER_TRAEFIK_HTTPS_ENTRYPOINT:-https}
+      traefik.http.routers.sipper-https.rule: Host(`sipper.dev`) || Host(`www.sipper.dev`) || Host(`sip.sipper.dev`) || Host(`meet.sipper.dev`)
+      traefik.http.routers.sipper-https.service: sipper-edge
+      traefik.http.routers.sipper-https.tls: "true"
+      traefik.http.routers.sipper-https.tls.certresolver: ${SIPPER_TRAEFIK_CERT_RESOLVER:?Set the existing certificate resolver}
+      traefik.http.routers.sipper-https.tls.domains[0].main: sipper.dev
+      traefik.http.routers.sipper-https.tls.domains[0].sans: www.sipper.dev,sip.sipper.dev,meet.sipper.dev
+      traefik.http.services.sipper-edge.loadbalancer.server.port: "80"
+
+networks:
+  shared-proxy:
+    external: true
+    name: ${SIPPER_PROXY_NETWORK:?Set the existing proxy network}

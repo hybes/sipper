@@ -1,0 +1,44 @@
+{
+	admin localhost:2019
+	auto_https off
+	servers {
+		trusted_proxies static {$SIPPER_TRAEFIK_IP}
+		trusted_proxies_strict
+		client_ip_headers X-Forwarded-For
+	}
+}
+
+import routes.caddy
+
+(shared-proxy-only) {
+	@untrusted not remote_ip {$SIPPER_TRAEFIK_IP}
+	respond @untrusted "Origin access denied" 403
+}
+
+http://www.sipper.dev {
+	route {
+		import shared-proxy-only
+		import sipper-www
+	}
+}
+
+http://sipper.dev {
+	route {
+		import shared-proxy-only
+		import sipper-site
+	}
+}
+
+http://meet.sipper.dev {
+	route {
+		import shared-proxy-only
+		import sipper-meet
+	}
+}
+
+http://sip.sipper.dev {
+	route {
+		import shared-proxy-only
+		import sipper-sip
+	}
+}

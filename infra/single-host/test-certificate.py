@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Check certificate validation and drain ordering without touching a gateway."""
 import importlib.util
+import base64
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -52,9 +54,10 @@ class CertificateTests(unittest.TestCase):
             mocked.start()
             self.addCleanup(mocked.stop)
 
-    def make_certificate(self, hostname='sip.sipper.dev', days=30):
+    def make_certificate(self, hostname='sip.sipper.dev', days=30, sans=None):
         subprocess.run(['openssl', 'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1',
-                        '-nodes', '-days', str(days), '-subj', f'/CN={hostname}', '-addext', f'subjectAltName=DNS:{hostname}',
+                        '-nodes', '-days', str(days), '-subj', f'/CN={hostname}', '-addext',
+                        'subjectAltName=' + ','.join('DNS:' + name for name in (sans or [hostname])),
                         '-keyout', str(self.key), '-out', str(self.certificate)],
                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -114,6 +117,69 @@ class CertificateTests(unittest.TestCase):
             module.sync(self.private)
         self.assertEqual(self.operations, [])
         self.assertEqual((self.target / 'server.key').read_bytes(), b'previous fictional material')
+
+    def shared_store(self, names=None):
+        names = names or ['sip.sipper.dev']
+        entry = {'domain': {'main': names[0], 'sans': names[1:]},
+                 'certificate': base64.b64encode(self.certificate.read_bytes()).decode(),
+                 'key': base64.b64encode(self.key.read_bytes()).decode()}
+        self.acme = self.private / 'fixture-acme.json'
+        self.acme.write_text(json.dumps({'fixture': {'Certificates': [
+            {'domain': {'main': 'unrelated.example.invalid'}, 'certificate': 'do not decode', 'key': 'do not decode'}, entry]}}))
+        (self.private / 'deployment.env').write_text(
+            f'SIPPER_DEPLOYMENT_MODE=shared\nSIPPER_TRAEFIK_CERT_RESOLVER=fixture\nSIPPER_TRAEFIK_ACME_FILE={self.acme}\n')
+        return entry
+
+    def test_shared_certificate_is_selected_without_changing_store_or_starting_stopped_services(self):
+        self.shared_store(['sipper.dev', 'sip.sipper.dev'])
+        original = self.acme.read_bytes()
+        self.running = b''
+        module.sync(self.private)
+        module.sync(self.private)
+        self.assertEqual(self.operations, [])
+        self.assertEqual(self.acme.read_bytes(), original)
+        self.assertEqual((self.target / 'server.key').read_bytes(), self.key.read_bytes())
+        self.assertEqual((self.target / 'server.key').stat().st_mode & 0o777, 0o600)
+        self.assertEqual(list(self.private.glob('.sip-certificate-*')), [])
+
+    def test_shared_certificate_covering_another_site_is_rejected(self):
+        self.shared_store(['sip.sipper.dev', 'unrelated.example.invalid'])
+        with self.assertRaises(ValueError):
+            module.sync(self.private)
+        self.assertEqual(self.operations, [])
+
+    def test_shared_certificate_actual_names_must_match_allowed_names(self):
+        self.make_certificate(sans=['sip.sipper.dev', 'unrelated.example.invalid'])
+        self.shared_store(['sip.sipper.dev'])
+        with self.assertRaises(ValueError):
+            module.sync(self.private)
+        self.assertEqual(self.operations, [])
+        self.assertEqual(list(self.private.glob('.sip-certificate-*')), [])
+
+    def test_ambiguous_shared_certificates_are_rejected(self):
+        entry = self.shared_store()
+        self.acme.write_text(json.dumps({'fixture': {'Certificates': [entry, entry]}}))
+        with self.assertRaises(ValueError):
+            module.sync(self.private)
+        self.assertEqual(self.operations, [])
+
+    def test_incomplete_shared_store_leaves_gateway_untouched(self):
+        self.shared_store()
+        self.acme.write_text('{')
+        with self.assertRaises(ValueError):
+            module.sync(self.private)
+        self.assertEqual(self.operations, [])
+        self.assertEqual((self.target / 'server.key').read_bytes(), b'previous fictional material')
+
+    def test_shared_mismatched_key_is_rejected_and_temporary_material_removed(self):
+        certificate = self.certificate.read_bytes()
+        self.make_certificate()
+        self.certificate.write_bytes(certificate)
+        self.shared_store()
+        with self.assertRaises(ValueError):
+            module.sync(self.private)
+        self.assertEqual(self.operations, [])
+        self.assertEqual(list(self.private.glob('.sip-certificate-*')), [])
 
 
 if __name__ == '__main__':

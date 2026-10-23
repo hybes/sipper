@@ -265,9 +265,11 @@ Network) and can save it to a file. Running the binary with
 ## Website
 
 `website/` is sipper.dev: plain HTML and CSS in `website/public` with no build
-step. The [single-host deployment](infra/SINGLE-HOST.md) serves it with
-`website/src/server.js` behind Caddy alongside management, the database and SIP
-gateway. `npm --prefix website start` previews it locally on port 8080; use
+step. The [cd-main deployment](infra/SHARED-HOST.md) serves it with
+`website/src/server.js` through the existing Traefik proxy and Sipper's Caddy
+edge, alongside management, the database and SIP gateway. The
+[dedicated-host option](infra/SINGLE-HOST.md) is also available.
+`npm --prefix website start` previews it locally on port 8080; use
 `SIPPER_MANAGEMENT_ENABLED=true` only with working portal routes at the proxy.
 
 The earlier Cloudflare Worker (`website/src/worker.js`) remains available. It

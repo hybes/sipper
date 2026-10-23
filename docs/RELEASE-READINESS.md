@@ -4,26 +4,31 @@ Sipper is not yet a deployed, accepted replacement for Bria Enterprise.
 The earlier [v1 handover](SIPPER-V1-HANDOVER.md) records a frozen local baseline;
 it does not certify live deployment or full feature parity.
 
-The owner selected one Hetzner host, `116.203.89.206`, and `sipper.dev`, with
-Plunk for email and payments disabled. SSH access is now verified. The host has
-1 GB RAM, and the owner explicitly selected **preparation only** until it can be
-resized. Public cutover and full-stack calling/meeting startup remain on hold.
-Docker Engine 29.9.2 and Compose 5.6.1 are installed on the host; Sipper services
-remain stopped. Reviewed source is staged at `/opt/sipper`. Pinned PostgreSQL,
+The owner switched the pilot target to the existing `cd-main` Docker host on
+23 October 2026, retaining `sipper.dev`, Plunk's Connect Dorset project and disabled
+payments. Coolify reports 24 CPU cores and 125.8 GB RAM, with Traefik v3.7 serving
+HTTPS. SSH access is waiting for the owner's Tailscale identity check. No Sipper
+services or private configuration have been installed on `cd-main`; disk space,
+current capacity, media ports and public reachability still need host checks.
+
+The earlier Hetzner host, `116.203.89.206`, remains **preparation only** with 1 GB
+RAM. Docker Engine 29.9.2 and Compose 5.6.1 are installed there; Sipper services
+remain stopped. Reviewed source is staged there at `/opt/sipper`. Pinned PostgreSQL,
 Caddy and LiveKit images are present. CI candidates are kept privately under
 `/opt/sipper-staging/671f7cdb6aeafcf38729a271c4fefe1591a3e0c5`; the Windows installer
 and Linux archive are staged there, with checksums and source manifests. All five
 reviewed AMD64 service images are loaded and their configuration digests match
 CI. The Windows candidate still has version 0.1.0 and must not replace the
 existing public release. Nothing is published or started by staging these files.
-Plunk SMTP connectivity from the host to the dashboard's
+Plunk SMTP connectivity from the Hetzner host to the dashboard's
 `next-smtp.useplunk.com:2587` endpoint passes with verified TLS 1.3. The owner
 selected the existing Connect Dorset project; `sipper.dev` has been added and
 its six email DNS records match both authoritative nameservers and a public
 resolver. Plunk confirmed the sending domain as verified on 23 October 2026;
 SMTP authentication and delivery remain unverified. Shared project tracking
 remains enabled.
-See [the single-host deployment guide](../infra/SINGLE-HOST.md).
+See the [shared-host deployment guide](../infra/SHARED-HOST.md) and the retained
+[Hetzner preparation record](../infra/SINGLE-HOST.md).
 
 ## Implemented and checked in this review
 
@@ -39,6 +44,11 @@ See [the single-host deployment guide](../infra/SINGLE-HOST.md).
 - Fresh private configuration generation, separate database roles, verified
   database TLS, limited gateway views, private service ports and SIP certificate
   renewal tooling. No real production secrets belong in the repository.
+- Shared-host overlay with bounded resources, only the edge on the existing
+  proxy network, no published web origins, and exact-proxy client-address trust.
+  Traefik certificate selection is limited to Sipper hostnames. Local checks
+  cover HTTPS, forged headers, neighbouring-container rejection and another
+  site's routing; these do not establish deployment on `cd-main`.
 - Real browser checks at desktop and mobile sizes: website pages/navigation,
   login/MFA, pilot grant, expiry error, saved-value reload, audit history and
   ordinary-administrator restrictions. No horizontal document overflow or
@@ -56,9 +66,13 @@ The same desktop UI checks also pass on this Mac. Mac checks passed 172,
 with 11 optional checks skipped. Android debug assembly, unit tests and lint
 passed; iOS Release compiled without signing. Portal typecheck/production build
 and the website/portal container builds passed. The disposable ingress and
-production-settings runtime rehearsals passed. All six SIP certificate checks
-pass on both the Mac and the server's OpenSSL, including hostname, key and
-near-expiry rejection before interrupting a running gateway.
+production-settings runtime rehearsals passed. The original six SIP certificate
+checks passed on both the Mac and Hetzner's OpenSSL, including hostname, key and
+near-expiry rejection before interrupting a running gateway. Current local
+coverage passes 12 certificate checks, including shared Traefik store selection
+and rejection of certificates containing another site's hostname. Both ingress
+modes and the production-settings runtime rehearsal pass locally after the
+shared-host changes.
 
 The encrypted backup/restore rehearsal passes: wrong keys, damaged archives,
 populated targets and partial restores are rejected; restored grants/jobs are
@@ -93,9 +107,10 @@ equivalent quality or availability.
 
 ## Gates before public pilot acceptance
 
-1. Resize the host, finish SMTP authentication, and test
-   actual email delivery and links. Email DNS and the reviewed source/images
-   are staged. Enable and verify the actual HTTPS service before public cutover.
+1. Finish `cd-main` access, capacity/network checks and deployment, complete SMTP
+   authentication, and test actual email delivery and links. Email DNS is
+   published; the reviewed source/images are staged on the old Hetzner host.
+   Enable and verify the actual HTTPS service before public cutover.
 2. Verify the owner's email/MFA, grant the pilot and exercise invitation,
    enrolment, directory, licence expiry and revocation using current apps.
 3. Configure the actual PBX and mobile providers. Check inbound/outbound audio,

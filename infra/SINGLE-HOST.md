@@ -1,6 +1,11 @@
-# Sipper on one Hetzner server
+# Dedicated-host deployment and Hetzner preparation
 
-The target is `116.203.89.206`, with the website and management at `sipper.dev`,
+**The owner selected `cd-main` as the pilot target on 23 October 2026.** Follow
+the [shared-host guide](SHARED-HOST.md) for that deployment. This page preserves
+the dedicated-host procedure and the state of the earlier Hetzner preparation.
+Do not cut public DNS over to the old Hetzner target.
+
+The prepared Hetzner target is `116.203.89.206`, with the website and management at `sipper.dev`,
 SIP TLS at `sip.sipper.dev`, and meeting signalling at `meet.sipper.dev`.
 Cloudflare provides DNS; Caddy on the server provides HTTPS. Plunk provides
 outbound account and invitation email. Paid signup remains disabled.

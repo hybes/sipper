@@ -26,9 +26,21 @@ def run(*command):
     subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def prepare(directory, public_ip, smtp_file, release, upstreams):
+def prepare(directory, public_ip, smtp_file, release, upstreams, *, proxy_network=None,
+            traefik_ip=None, traefik_resolver=None, traefik_acme_file=None):
     directory = directory.resolve()
     ipaddress.IPv4Address(public_ip)
+    shared_values = (proxy_network, traefik_ip, traefik_resolver, traefik_acme_file)
+    shared = any(shared_values)
+    if shared:
+        if not all(shared_values):
+            raise ValueError('Shared hosting needs the proxy network, exact proxy IP, certificate resolver and ACME file')
+        ipaddress.ip_address(traefik_ip)
+        for name in (proxy_network, traefik_resolver):
+            if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}', name):
+                raise ValueError('Invalid proxy network or certificate resolver name')
+        if not Path(traefik_acme_file).is_absolute() or any(char.isspace() for char in str(traefik_acme_file)):
+            raise ValueError('The existing Traefik ACME file must have an absolute path without whitespace')
     if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]{0,100}', release):
         raise ValueError('Use a simple immutable release tag')
     for host in filter(None, upstreams.split(',')):
@@ -137,6 +149,9 @@ logging:
     if os.geteuid() == 0:
         os.chown(directory / 'livekit.yaml', 1000, 1000)
     envfile(directory / 'deployment.env', {
+        'SIPPER_DEPLOYMENT_MODE': 'shared' if shared else 'standalone',
+        **({'SIPPER_PROXY_NETWORK': proxy_network, 'SIPPER_TRAEFIK_IP': traefik_ip,
+            'SIPPER_TRAEFIK_CERT_RESOLVER': traefik_resolver, 'SIPPER_TRAEFIK_ACME_FILE': traefik_acme_file} if shared else {}),
         'SIPPER_PRIVATE_DIRECTORY': directory, 'SIPPER_APP_ENV_FILE': directory / 'portal.env',
         'SIPPER_APP_IMAGE': f'sipper-platform:{release}', 'SIPPER_WEBSITE_IMAGE': f'sipper-website:{release}',
         'SIPPER_CONTROLLER_IMAGE': f'sipper-controller:{release}', 'SIPPER_ASTERISK_IMAGE': f'sipper-asterisk:{release}',
@@ -156,9 +171,15 @@ if __name__ == '__main__':
     parser.add_argument('--smtp-env', type=Path, required=True)
     parser.add_argument('--release', required=True)
     parser.add_argument('--upstreams', default='')
+    parser.add_argument('--proxy-network', help='Existing Traefik Docker network; enables shared hosting')
+    parser.add_argument('--traefik-ip', help='Exact address of Traefik on that network, never the whole subnet')
+    parser.add_argument('--traefik-resolver', help='Existing Traefik certificate resolver')
+    parser.add_argument('--traefik-acme-file', type=Path, help='Existing private ACME JSON, read only for the Sipper SIP certificate')
     args = parser.parse_args()
     try:
-        prepare(args.directory, args.public_ip, args.smtp_env, args.release, args.upstreams)
+        prepare(args.directory, args.public_ip, args.smtp_env, args.release, args.upstreams,
+                proxy_network=args.proxy_network, traefik_ip=args.traefik_ip,
+                traefik_resolver=args.traefik_resolver, traefik_acme_file=args.traefik_acme_file)
     except Exception as error:
         # Provider values, generated keys and subprocess arguments are never logged.
         print(f'Preparation failed ({type(error).__name__}). Check inputs; preserve any generated keys before retrying.')

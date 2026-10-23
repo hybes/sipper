@@ -1,9 +1,9 @@
 # Deploying and recovering Sipper management
 
-For the selected Hetzner host and domain, use the
-[single-host guide](SINGLE-HOST.md). It adds the website, Caddy and a private TLS
-database to the component deployments below. The current 1 GB host is explicitly
-for preparation only; see the guide before starting services or changing DNS.
+For the selected `cd-main` pilot host, use the [shared-host guide](SHARED-HOST.md).
+It uses the existing Traefik proxy and keeps Sipper's database and origins private.
+The [dedicated-host guide](SINGLE-HOST.md) records the earlier Hetzner preparation;
+that 1 GB server remains preparation only.
 
 These assets package the portal, migrations and background workers. They have a
 disposable local rehearsal; they are not evidence of a production deployment or

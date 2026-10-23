@@ -88,6 +88,7 @@ jobs:
         run: |
           python3 infra/single-host/test-certificate.py
           python3 infra/single-host/test-ingress.py
+          python3 infra/single-host/test-ingress.py --shared
           python3 infra/single-host/test-runtime.py
           python3 infra/recovery/rehearse.py
 

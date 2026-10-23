@@ -74,6 +74,7 @@ services:
     ports: ["80:80/tcp", "443:443/tcp", "443:443/udp"]
     volumes:
       - ./single-host/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./single-host/routes.caddy:/etc/caddy/routes.caddy:ro
       - ${SIPPER_PRIVATE_DIRECTORY}/caddy-data:/data
       - caddy-config:/config
     depends_on:

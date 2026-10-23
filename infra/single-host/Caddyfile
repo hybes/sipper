@@ -2,46 +2,21 @@
 	admin localhost:2019
 }
 
+import routes.caddy
+
 www.sipper.dev {
-	redir https://sipper.dev{uri} 308
+	import sipper-www
 }
 
 sipper.dev {
-	encode zstd gzip
-	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
-	@management path /portal /portal/* /api /api/* /_nuxt/* /assets/sipper-icon.png /.well-known/openid-configuration /.well-known/oauth-authorization-server
-	handle @management {
-		reverse_proxy portal:3100 {
-			header_up -Forwarded
-			header_up -X-Real-IP
-			header_up -X-Sipper-Verified-IP
-			header_up -CF-Connecting-IP
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Host sipper.dev
-			header_up X-Forwarded-Proto https
-			header_up X-Sipper-Client-IP {remote_host}
-			header_up X-Sipper-Edge-Secret {$SIPPER_EDGE_SHARED_SECRET}
-			header_down -X-Sipper-Edge-Secret
-			header_down -X-Sipper-Client-IP
-			header_down -X-Sipper-Verified-IP
-			header_down Cache-Control no-store
-			header_down CDN-Cache-Control no-store
-			header_down X-Robots-Tag noindex
-		}
-	}
-	handle {
-		reverse_proxy website:8080
-	}
+	import sipper-site
 }
 
 meet.sipper.dev {
-	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
-	# Only Sipper's admission proxy is reachable. Never proxy the raw SFU here.
-	reverse_proxy meetings-signalling:7881
+	import sipper-meet
 }
 
 sip.sipper.dev {
-	# Obtain and renew the SIP hostname's certificate for the TLS gateway.
-	# sync-sip-certificate.py copies only this key/chain into its private mount.
-	respond "Sipper SIP endpoint. Use TLS port 5061." 200
+	# Caddy owns certificate renewal on a dedicated host.
+	import sipper-sip
 }
