@@ -20,9 +20,19 @@ manifests are under `/opt/sipper-staging/671f7cdb6aeafcf38729a271c4fefe1591a3e0c
 Use that commit as `--release` when generating configuration for these images.
 The private SMTP template at `/root/sipper-smtp.env` still needs the actual Plunk
 key. No `/etc/sipper` configuration, service startup or DNS cutover has occurred.
-The host reached `smtp.useplunk.com:587` and negotiated verified TLS 1.3 on
-23 October 2026. This checks connectivity only; SMTP authentication and delivery
-still need the real project key and a verified sending domain.
+The selected Plunk dashboard specifies `next-smtp.useplunk.com:2587`, rather
+than the public site's generic SMTP example. The host reached that endpoint and
+negotiated verified TLS 1.3 on 23 October 2026. This checks connectivity only;
+SMTP authentication and delivery still need the real project key and a verified
+sending domain.
+
+The owner selected Plunk's existing **Connect Dorset** project. `sipper.dev` is
+added there. The six email records in
+[`single-host/plunk-sipper.dev.zone`](single-host/plunk-sipper.dev.zone) are
+published and match both Cloudflare authoritative nameservers and `1.1.1.1`.
+They include three DKIM CNAMEs, the `plunk` bounce-domain MX/SPF records and a
+DMARC policy with no enforcement during the pilot. The existing website AAAA
+records remain unchanged. Plunk's sending-domain verification is still pending.
 
 Docker on this host uses the containerd image store and reports manifest IDs;
 the CI manifest records configuration IDs. The staged `manifest.json` records
@@ -57,7 +67,10 @@ secrets. The wrapper defaults to `/etc/sipper/deployment.env`; override it with
 
 After Plunk is configured, put its key in the private SMTP file. Do not paste it
 into chat, shell history or source. The sending address is `accounts@sipper.dev`.
-Disable email link/open tracking for authentication mail in the Plunk project.
+Email tracking is currently **Enabled** in the shared Connect Dorset project.
+Changing it affects the other sites using that project, so this setup leaves it
+unchanged. Review the shared tracking policy and verify authentication links
+during pilot email acceptance; do not disable another site's tracking implicitly.
 Use Plunk's exact project-specific DNS values from its domain settings; merge
 SPF with an existing policy and preserve unrelated inbound mail records. See
 [domain verification](https://docs.useplunk.com/guides/verifying-domains).

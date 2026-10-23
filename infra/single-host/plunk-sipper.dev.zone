@@ -1,0 +1,14 @@
+; Sipper outbound email through the existing Connect Dorset Plunk project.
+; Add these records to the existing zone; this is not a full zone replacement.
+; Keep the DKIM CNAME records DNS-only. Values are public DNS data, not secrets.
+$ORIGIN sipper.dev.
+$TTL 300
+
+y5sndow452tntotj5xtcyt2fhm3e74rq._domainkey IN CNAME y5sndow452tntotj5xtcyt2fhm3e74rq.dkim.amazonses.com.
+wvqrph5jqe7pow6mhdnp6fil5tiswa46._domainkey IN CNAME wvqrph5jqe7pow6mhdnp6fil5tiswa46.dkim.amazonses.com.
+vjlu5emm2v2s7rgjnpl6rsrsiwn4b63y._domainkey IN CNAME vjlu5emm2v2s7rgjnpl6rsrsiwn4b63y.dkim.amazonses.com.
+plunk IN MX 10 feedback-smtp.eu-north-1.amazonses.com.
+plunk IN TXT "v=spf1 include:amazonses.com ~all"
+
+; Observe DMARC alignment during the pilot before adopting an enforcing policy.
+_dmarc IN TXT "v=DMARC1; p=none"

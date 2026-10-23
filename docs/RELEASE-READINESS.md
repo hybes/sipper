@@ -16,8 +16,12 @@ and Linux archive are staged there, with checksums and source manifests. All fiv
 reviewed AMD64 service images are loaded and their configuration digests match
 CI. The Windows candidate still has version 0.1.0 and must not replace the
 existing public release. Nothing is published or started by staging these files.
-Plunk SMTP connectivity from the host passes with verified TLS 1.3; domain
-verification, SMTP authentication and delivery remain unverified.
+Plunk SMTP connectivity from the host to the dashboard's
+`next-smtp.useplunk.com:2587` endpoint passes with verified TLS 1.3. The owner
+selected the existing Connect Dorset project; `sipper.dev` has been added and
+its six email DNS records match both authoritative nameservers and a public
+resolver. Plunk's domain verification is pending; SMTP authentication and
+delivery remain unverified. Shared project tracking remains enabled.
 See [the single-host deployment guide](../infra/SINGLE-HOST.md).
 
 ## Implemented and checked in this review
@@ -88,7 +92,8 @@ equivalent quality or availability.
 
 ## Gates before public pilot acceptance
 
-1. Resize the host and configure Plunk and its DNS. The reviewed source/images
+1. Resize the host, finish Plunk verification and SMTP authentication, and test
+   actual email delivery and links. Email DNS and the reviewed source/images
    are staged. Enable and verify the actual HTTPS service before public cutover.
 2. Verify the owner's email/MFA, grant the pilot and exercise invitation,
    enrolment, directory, licence expiry and revocation using current apps.
