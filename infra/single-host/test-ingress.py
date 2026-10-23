@@ -53,6 +53,13 @@ def shared_configuration(temporary, network):
                                                 'config', '--format', 'json'], env=env, stderr=subprocess.PIPE))
     for name, service in config['services'].items():
         assert service['mem_limit'] and service['cpus'] and service['pids_limit'], name
+        # An unquoted flow-list entry splits at commas into invalid mount paths.
+        # Check Docker's resolved input, including the media service that this
+        # ingress fixture does not start.
+        for mount in service.get('tmpfs', []):
+            path, separator, options = mount.partition(':')
+            assert path.startswith('/') and separator, f'{name}: invalid tmpfs path'
+            assert {'rw', 'noexec', 'nosuid'} <= set(options.split(',')), f'{name}: missing tmpfs protections'
         if name not in ('asterisk', 'meetings-media'):
             assert not service.get('ports'), name
         if name == 'controller':

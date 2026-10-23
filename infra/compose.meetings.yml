@@ -18,7 +18,7 @@ services:
     # Do not publish 7880, and do not proxy public requests directly to it.
     restart: unless-stopped
     read_only: true
-    tmpfs: [/tmp:rw,noexec,nosuid,size=16m]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     logging: { driver: json-file, options: { max-size: 10m, max-file: "3" } }
