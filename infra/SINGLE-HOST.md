@@ -11,6 +11,19 @@ or cut public website DNS over to it yet. Use at least 4 GB for a small pilot;
 8 GB provides more room for meetings. These are starting capacities, not a
 tested concurrent-call or participant limit. Measure usage during acceptance.
 
+The reviewed source is staged at `/opt/sipper`. All five application images from
+commit `671f7cdb6aeafcf38729a271c4fefe1591a3e0c5` are loaded, alongside the pinned
+PostgreSQL, Caddy and LiveKit images. The verified archive and image/source
+manifests are under `/opt/sipper-staging/671f7cdb6aeafcf38729a271c4fefe1591a3e0c5/linux`.
+Use that commit as `--release` when generating configuration for these images.
+The private SMTP template at `/root/sipper-smtp.env` still needs the actual Plunk
+key. No `/etc/sipper` configuration, service startup or DNS cutover has occurred.
+
+Docker on this host uses the containerd image store and reports manifest IDs;
+the CI manifest records configuration IDs. The staged `manifest.json` records
+both identifiers after verifying that every server manifest references the exact
+CI configuration digest and `linux/amd64` platform.
+
 ## Layout and prerequisites
 
 - Debian 13, Docker Engine and Compose 2.30 or newer. Debian's bundled Compose

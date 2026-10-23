@@ -9,8 +9,13 @@ Plunk for email and payments disabled. SSH access is now verified. The host has
 1 GB RAM, and the owner explicitly selected **preparation only** until it can be
 resized. Public cutover and full-stack calling/meeting startup remain on hold.
 Docker Engine 29.9.2 and Compose 5.6.1 are installed on the host; Sipper services
-remain stopped. The new Linux CI workflow builds and checks versioned service
-images for staging without building on this small server.
+remain stopped. Reviewed source is staged at `/opt/sipper`. Pinned PostgreSQL,
+Caddy and LiveKit images are present. CI candidates are kept privately under
+`/opt/sipper-staging/671f7cdb6aeafcf38729a271c4fefe1591a3e0c5`; the Windows installer
+and Linux archive are staged there, with checksums and source manifests. All five
+reviewed AMD64 service images are loaded and their configuration digests match
+CI. The Windows candidate still has version 0.1.0 and must not replace the
+existing public release. Nothing is published or started by staging these files.
 See [the single-host deployment guide](../infra/SINGLE-HOST.md).
 
 ## Implemented and checked in this review
@@ -22,6 +27,8 @@ See [the single-host deployment guide](../infra/SINGLE-HOST.md).
   allocated-seat limits, audit events, safe retries and stale-edit rejection.
   Existing paid subscriptions cannot be replaced by pilots; local test billing
   cannot alter pilots, and paid conversion requires deliberate operator review.
+  Expired pilots are labelled correctly in the workspace list; an open workspace
+  updates its expiry badge and removes available capacity without a reload.
 - Fresh private configuration generation, separate database roles, verified
   database TLS, limited gateway views, private service ports and SIP certificate
   renewal tooling. No real production secrets belong in the repository.
@@ -31,13 +38,29 @@ See [the single-host deployment guide](../infra/SINGLE-HOST.md).
   uncaught page errors was observed in those flows.
 
 Current automated results: portal 158 passing; website 14 passing; gateway
-21 Node and 4 Python checks; extension 39; Windows models 125 and native engine
-28 passing with 2 opt-in checks skipped on this Mac. Mac checks passed 172,
+21 Node and 4 Python checks; extension 39. The
+[Windows CI run](https://github.com/hybes/sipper/actions/runs/39923783193)
+compiled PJSIP and the native engine with MSVC, passed 126 model checks and
+28 native checks (2 opt-in checks skipped), packaged the NSIS installer and
+passed all 6 packaged-app checks. Registration, outgoing/incoming calls,
+missed-call history and second-launch link import use a fictional PBX and null
+audio; these checks do not establish physical audio or managed OAuth acceptance.
+The same desktop UI checks also pass on this Mac. Mac checks passed 172,
 with 11 optional checks skipped. Android debug assembly, unit tests and lint
 passed; iOS Release compiled without signing. Portal typecheck/production build
 and the website/portal container builds passed. The disposable ingress and
-production-settings runtime rehearsals passed. These results are local evidence,
-not evidence of Windows hardware, mobile push or public provider operation.
+production-settings runtime rehearsals passed. All six SIP certificate checks
+pass on both the Mac and the server's OpenSSL, including hostname, key and
+near-expiry rejection before interrupting a running gateway.
+
+The encrypted backup/restore rehearsal passes: wrong keys, damaged archives,
+populated targets and partial restores are rejected; restored grants/jobs are
+quarantined until explicit release. Real portal/worker containers restart, a
+frozen worker becomes unhealthy, and resuming it restores health. This rehearsal
+also passed in the final
+[Linux CI run](https://github.com/hybes/sipper/actions/runs/39923783161).
+These are controlled acceptance checks, not evidence of
+mobile push, physical audio, public provider operation or off-host recovery.
 
 ## Bria comparison and remaining scope
 
@@ -51,7 +74,7 @@ equivalent quality or availability.
 
 | Area | Sipper state | Remaining work or evidence |
 | --- | --- | --- |
-| Mac, Windows, iOS and Android | Implementations and build/test coverage exist | Current versioned distribution, actual Windows acceptance, mobile signing and store/test distribution |
+| Mac, Windows, iOS and Android | Implementations and build/test coverage exist; Windows CI installer and packaged call flows pass | Current versioned distribution, Windows hardware/managed OAuth acceptance, mobile signing and store/test distribution |
 | SIP accounts and call control | Multiple accounts, hold, mute, DTMF, blind/attended transfer and local conferences | Real PBX compatibility and physical audio/Bluetooth/network handover on each platform |
 | Managed mobile incoming calls | Gateway, device claims and push adapters implemented | Real APNs/FCM projects, credentials, locked/idle-device delivery and OS call-UI acceptance |
 | Central administration | Workspaces/resellers/customers, roles, MFA, licences, devices, configuration, enrolment and audit | Real owner bootstrap, email delivery, pilot enrolment and operational acceptance |
