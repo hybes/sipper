@@ -23,10 +23,7 @@ class CertificateTests(unittest.TestCase):
         self.target.mkdir()
         self.certificate = self.source / 'sip.sipper.dev.crt'
         self.key = self.source / 'sip.sipper.dev.key'
-        subprocess.run(['openssl', 'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1',
-                        '-nodes', '-days', '30', '-subj', '/CN=sip.sipper.dev', '-addext', 'subjectAltName=DNS:sip.sipper.dev',
-                        '-keyout', str(self.key), '-out', str(self.certificate)],
-                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.make_certificate()
         for name in ['server.crt', 'server.key']:
             (self.target / name).write_bytes(b'previous fictional material')
         self.operations = []
@@ -54,6 +51,12 @@ class CertificateTests(unittest.TestCase):
                        patch.object(module.os, 'chown')]:
             mocked.start()
             self.addCleanup(mocked.stop)
+
+    def make_certificate(self, hostname='sip.sipper.dev', days=30):
+        subprocess.run(['openssl', 'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1',
+                        '-nodes', '-days', str(days), '-subj', f'/CN={hostname}', '-addext', f'subjectAltName=DNS:{hostname}',
+                        '-keyout', str(self.key), '-out', str(self.certificate)],
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def test_valid_pair_stages_drains_then_restarts_and_unchanged_pair_is_noop(self):
         module.sync(self.private)
@@ -85,16 +88,24 @@ class CertificateTests(unittest.TestCase):
         self.assertEqual((self.target / 'server.key').read_bytes(), b'previous fictional material')
 
     def test_wrong_certificate_hostname_is_rejected_before_draining(self):
-        original = module.output
+        self.make_certificate(hostname='wrong.example.invalid')
+        with self.assertRaises(subprocess.CalledProcessError):
+            module.sync(self.private)
+        self.assertEqual(self.operations, [])
+        self.assertEqual((self.target / 'server.crt').read_bytes(), b'previous fictional material')
 
-        def wrong_host(*command):
-            if '-checkhost' in command:
-                command = (*command[:-2], 'wrong.example.invalid', '-noout')
-            return original(*command)
+    def test_near_expiry_certificate_is_rejected_before_draining(self):
+        self.make_certificate(days=3)
+        with self.assertRaises(subprocess.CalledProcessError):
+            module.sync(self.private)
+        self.assertEqual(self.operations, [])
 
-        with patch.object(module, 'output', side_effect=wrong_host):
-            with self.assertRaises(subprocess.CalledProcessError):
-                module.sync(self.private)
+    def test_unmatched_key_is_rejected_before_draining(self):
+        certificate = self.certificate.read_bytes()
+        self.make_certificate()
+        self.certificate.write_bytes(certificate)
+        with self.assertRaises(ValueError):
+            module.sync(self.private)
         self.assertEqual(self.operations, [])
 
     def test_partial_gateway_state_requires_operator_recovery(self):

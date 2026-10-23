@@ -1,0 +1,2 @@
+# git apply must receive the same LF context as the verified upstream tarball.
+*.patch text eol=lf

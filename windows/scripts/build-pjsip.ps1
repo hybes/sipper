@@ -67,7 +67,11 @@ if ($LASTEXITCODE -eq 0) {
   Invoke-Checked 'git' @('-C', $pj, 'apply', $digestPatch)
 } else {
   & git -C $pj apply --reverse --check --quiet $digestPatch
-  if ($LASTEXITCODE -ne 0) { throw 'Cached PJSIP does not match the Schannel digest patch. Re-extract the pinned source.' }
+  if ($LASTEXITCODE -ne 0) {
+    # Show the failed context before stopping; never continue without SHA-256 support.
+    & git -C $pj apply --check $digestPatch
+    throw 'PJSIP does not match the Schannel digest patch. Check the diagnostic above and re-extract the pinned source if needed.'
+  }
 }
 $opus = Join-Path $Work 'opus'
 if (-not (Test-Path $opusSource)) {

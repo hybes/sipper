@@ -23,7 +23,11 @@ def sync(directory):
     certificate = max(certificates, key=lambda path: path.stat().st_mtime)
     key = certificate.with_suffix('.key')
     output('openssl', 'x509', '-in', str(certificate), '-checkend', '604800', '-noout')
-    output('openssl', 'x509', '-in', str(certificate), '-checkhost', 'sip.sipper.dev', '-noout')
+    # x509 -checkhost reports a mismatch with exit status 0 on OpenSSL 3.
+    # Caddy supplies the trusted certificate; verify makes hostname, validity
+    # and TLS-server usage failures fatal without parsing human-readable output.
+    output('openssl', 'verify', '-trusted', str(certificate), '-partial_chain',
+           '-purpose', 'sslserver', '-verify_hostname', 'sip.sipper.dev', str(certificate))
     cert_public = output('openssl', 'x509', '-in', str(certificate), '-pubkey', '-noout')
     key_public = output('openssl', 'pkey', '-in', str(key), '-pubout')
     if cert_public != key_public:
