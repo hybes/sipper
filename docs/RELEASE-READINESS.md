@@ -20,8 +20,9 @@ Plunk SMTP connectivity from the host to the dashboard's
 `next-smtp.useplunk.com:2587` endpoint passes with verified TLS 1.3. The owner
 selected the existing Connect Dorset project; `sipper.dev` has been added and
 its six email DNS records match both authoritative nameservers and a public
-resolver. Plunk's domain verification is pending; SMTP authentication and
-delivery remain unverified. Shared project tracking remains enabled.
+resolver. Plunk confirmed the sending domain as verified on 23 October 2026;
+SMTP authentication and delivery remain unverified. Shared project tracking
+remains enabled.
 See [the single-host deployment guide](../infra/SINGLE-HOST.md).
 
 ## Implemented and checked in this review
@@ -92,7 +93,7 @@ equivalent quality or availability.
 
 ## Gates before public pilot acceptance
 
-1. Resize the host, finish Plunk verification and SMTP authentication, and test
+1. Resize the host, finish SMTP authentication, and test
    actual email delivery and links. Email DNS and the reviewed source/images
    are staged. Enable and verify the actual HTTPS service before public cutover.
 2. Verify the owner's email/MFA, grant the pilot and exercise invitation,

@@ -23,8 +23,8 @@ key. No `/etc/sipper` configuration, service startup or DNS cutover has occurred
 The selected Plunk dashboard specifies `next-smtp.useplunk.com:2587`, rather
 than the public site's generic SMTP example. The host reached that endpoint and
 negotiated verified TLS 1.3 on 23 October 2026. This checks connectivity only;
-SMTP authentication and delivery still need the real project key and a verified
-sending domain.
+SMTP authentication and delivery still need to be tested with the real project
+key. Plunk now shows the sending domain as verified.
 
 The owner selected Plunk's existing **Connect Dorset** project. `sipper.dev` is
 added there. The six email records in
@@ -32,7 +32,8 @@ added there. The six email records in
 published and match both Cloudflare authoritative nameservers and `1.1.1.1`.
 They include three DKIM CNAMEs, the `plunk` bounce-domain MX/SPF records and a
 DMARC policy with no enforcement during the pilot. The existing website AAAA
-records remain unchanged. Plunk's sending-domain verification is still pending.
+records remain unchanged. Plunk confirmed the sending domain as verified on
+23 October 2026.
 
 Docker on this host uses the containerd image store and reports manifest IDs;
 the CI manifest records configuration IDs. The staged `manifest.json` records
