@@ -37,8 +37,11 @@ routes. No registration or external call was attempted.
 
 The approved Connect Dorset Plunk key is stored in `/root/sipper-smtp.env` with
 mode 0600 and copied into the private portal configuration. SMTP AUTH returned
-235 over verified TLS 1.3; no email was sent. Plunk marks `sipper.dev` as verified.
-Account email delivery, the owner account and MFA are still pending.
+235 over verified TLS 1.3; no operator test email was sent. Plunk marks `sipper.dev`
+as verified. The owner subsequently completed signup email verification and MFA.
+After explicit approval for the exact account, the existing owner-grant script
+succeeded and recorded its audit event. The live UI shows platform-owner controls.
+Invitation delivery and pilot enrolment remain unverified.
 
 **Public cutover is complete:** only the old website Worker's `sipper.dev` and
 `www.sipper.dev` custom-domain bindings were removed. The Worker and its old
@@ -57,18 +60,32 @@ Download redirects still target the existing standalone 0.1.0 releases. Missing
 or invalid meeting tokens receive 403; unauthenticated management/gateway APIs
 receive 401. Direct edge access is rejected, PostgreSQL uses TLS with a non-superuser
 application role, and payment settings are disabled. Coolify's existing public
-HTTPS endpoint still responds. These checks do not establish verified account
-workflows, working calls or meeting audio/video.
+HTTPS endpoint still responds. The live owner service dashboard passes manual and
+automatic refresh: workers report polling and the idle gateway reports not ready.
+Workspace, team, activity and owner pilot controls load at desktop and mobile
+sizes without document overflow or page errors. Checkout and local test billing
+are unavailable, and no pilot capacity has been granted.
+These checks do not establish invitation/enrolment workflows, working calls or
+meeting audio/video.
 
 Encrypted database/configuration backups now run daily at 03:30 UTC with up to
 ten minutes of jitter. The first snapshot, `20261023T132753Z`, is under
 `/var/backups/sipper`; its two archive checksums match the manifest. The recovery
 identity is held at `infra/.private/recovery/age-identity.txt` in the original
 Mac checkout, outside Git, and only its public
-recipient is on cd-main. Copying the encrypted archives to the Mac and verifying
-decryption remain pending explicit approval. The archives have not left the
-server. Regular off-host transfer, retention and alert delivery remain open;
-the daily local backup alone is not off-host recovery.
+recipient is on cd-main. With explicit approval, the newer snapshot
+`20261023T135311Z` was copied to the Mac's Git-ignored
+`infra/.private/recovery/snapshots` directory. Both checksums match and both
+archives fully decrypt and authenticate. Its database was restored into an
+isolated, network-disabled container using tmpfs for the recovery identity,
+decrypted archive, PostgreSQL data and WAL. The owner, verified MFA account,
+workspace and all 37 migrations were recovered. Recovery hold stayed active;
+sessions and pending jobs were cleared, the application role was non-superuser,
+and restoring again into that populated target was refused. The container was
+removed and no plaintext archive was saved to disk. A private verification record
+is retained beside the encrypted snapshots. This is one verified off-host copy
+and restore; recurring transfer, retention, independent key escrow, replacement-host
+recovery and alert delivery remain open.
 The backup changes also passed the full
 [managed-platform CI run](https://github.com/hybes/sipper/actions/runs/39961288034),
 including ingress, production runtime and controlled recovery rehearsals.
@@ -176,9 +193,10 @@ gateway is stopped. The existing timer and graceful call drain remain applicable
 
 ## Acceptance and operations
 
-Finish owner email/MFA setup, pilot licensing, signed app distribution, regular
-off-host backups, key escrow, restore drills and alerts before accepting the
-pilot. PBX/media acceptance was explicitly deferred by the owner; deployment
+Finish pilot licensing and enrolment, signed app distribution, regular
+off-host backups, independent key escrow, replacement-host restore drills and
+alerts before accepting the pilot. PBX/media acceptance was explicitly deferred
+by the owner; deployment
 does not establish interoperability. Shared hosting also means host restarts and
 resource
 problems can affect Sipper alongside the other applications. The broader gaps

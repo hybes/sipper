@@ -49,8 +49,16 @@ The existing Coolify HTTPS endpoint remains available.
 Public Chromium checks at 1440px and 390px pass for the website, support/privacy
 and sign-in/sign-up pages, including empty signup validation. No broken images,
 horizontal document overflow or browser errors were observed. Download routes
-still target the existing standalone 0.1.0 releases. Owner account creation,
-email verification and MFA are pending; no owner privilege has been bypassed.
+still target the existing standalone 0.1.0 releases. The owner completed signup,
+email verification and MFA. After explicit approval for that exact account,
+the existing grant script assigned platform-owner access and recorded one audit
+event. The live UI exposes the owner controls. Manual and automatic service-status
+refresh both return current samples: all three workers are polling, and the
+gateway correctly reports not ready with no PBX configured. Automatic refresh
+pauses while Chromium reports the tab as hidden and resumes in the foreground.
+The live workspace, team and activity views load; owner pilot controls are
+available at 1440px and 390px without document overflow or page errors. Checkout
+and local test-billing controls are absent. No pilot capacity has been granted.
 
 The daily encrypted backup service succeeds both directly and under systemd.
 It creates a database dump over verified TLS using the application role, and a
@@ -59,9 +67,18 @@ before a timestamped snapshot and checksum manifest are published. The first
 snapshot is `/var/backups/sipper/20261023T132753Z`; its archive checksums match.
 The timer runs at 03:30 UTC with up to ten minutes of jitter. The recovery key
 is private on the owner's Mac and only the public recipient is on cd-main.
-Off-server copying and decryption verification await explicit approval; no
-archive has left the server. Regular off-host transfer, retention and alerts
-remain unconfigured. The existing Uptime Kuma dashboard requires sign-in.
+With explicit approval, snapshot `20261023T135311Z` was copied to the Mac's
+Git-ignored `infra/.private/recovery/snapshots` directory. Both archive checksums
+match and full decryption authenticates. The actual database backup was restored
+into a temporary, network-isolated PostgreSQL container with all database files,
+the recovery identity and decrypted data on tmpfs. The verified MFA account,
+owner, workspace and all 37 migrations were recovered. Recovery hold remained
+active, sessions and pending jobs were cleared, the application role remained
+non-superuser, and a second restore into the populated target was refused. The
+container was removed; no plaintext backup was saved to disk. This establishes
+one verified off-host copy and restore. Regular off-host transfer, retention,
+independent key escrow and alerts remain unconfigured. The existing Uptime Kuma
+dashboard requires sign-in.
 
 The earlier Hetzner host, `116.203.89.206`, remains **preparation only** with 1 GB
 RAM. Docker Engine 29.9.2 and Compose 5.6.1 are installed there; Sipper services
@@ -78,8 +95,9 @@ selected the existing Connect Dorset project; `sipper.dev` has been added and
 its six email DNS records match both authoritative nameservers and a public
 resolver. Plunk confirmed the sending domain as verified on 23 October 2026;
 SMTP authentication on cd-main now passes with response 235 over verified TLS 1.3.
-The approved key is stored privately there; no email has been sent and delivery
-remains unverified. Shared project tracking remains enabled.
+The approved key is stored privately there. The owner's signup email verification
+completed through the live service; invitation delivery remains unverified.
+No operator test email was sent. Shared project tracking remains enabled.
 See the [shared-host deployment guide](../infra/SHARED-HOST.md) and the retained
 [Hetzner preparation record](../infra/SINGLE-HOST.md).
 
@@ -140,7 +158,9 @@ frozen worker becomes unhealthy, and resuming it restores health. This rehearsal
 also passed in the final
 [Linux CI run](https://github.com/hybes/sipper/actions/runs/39923783161).
 These are controlled acceptance checks, not evidence of
-mobile push, physical audio, public provider operation or off-host recovery.
+mobile push, physical audio or public calling-provider operation. The separate
+live-backup restore described above verifies the current small deployment's
+off-host recovery, not a full replacement-host cutover or capacity claim.
 
 ## Bria comparison and remaining scope
 
@@ -157,27 +177,28 @@ equivalent quality or availability.
 | Mac, Windows, iOS and Android | Implementations and build/test coverage exist; Windows CI installer and packaged call flows pass | Current versioned distribution, Windows hardware/managed OAuth acceptance, mobile signing and store/test distribution |
 | SIP accounts and call control | Multiple accounts, hold, mute, DTMF, blind/attended transfer and local conferences | Real PBX compatibility and physical audio/Bluetooth/network handover on each platform |
 | Managed mobile incoming calls | Gateway, device claims and push adapters implemented | Real APNs/FCM projects, credentials, locked/idle-device delivery and OS call-UI acceptance |
-| Central administration | Workspaces/resellers/customers, roles, MFA, licences, devices, configuration, enrolment and audit | Real owner bootstrap, email delivery, pilot enrolment and operational acceptance |
+| Central administration | Workspaces/resellers/customers, roles, MFA, licences, devices, configuration, enrolment and audit; live owner bootstrap and signup email verification complete | Invitation delivery, pilot enrolment and broader operational acceptance |
 | Company identity and contacts | OIDC SSO, SCIM, directory and group assignments | Real identity-provider/SCIM integration; equivalent cross-platform personal-contact/history synchronisation is incomplete |
 | Presence and messaging | Shared user status/DND, direct/group messages and server retention | Rich automatic presence, messaging attachments/file transfer and message search remain gaps |
 | Meetings and video | Managed LiveKit rooms, admission and client meeting interfaces | Native screen publishing, phone-interruption handoff, TURN/TLS and device/media acceptance; this does not supply SIP video calling |
 | Diagnostics and administration | Device/registration/activity views, audit and support diagnostics | Equivalent call-quality MOS/jitter/loss reporting and broader enterprise helpdesk tooling remain gaps |
-| Production operations | Live public DNS/HTTPS/SIP TLS, renewal timer, private ingress and daily encrypted database/configuration backups | Capacity, off-host transfer/retention, independent key escrow, real restore acceptance, monitoring and a real alert destination |
+| Production operations | Live public DNS/HTTPS/SIP TLS, renewal timer, private ingress, daily encrypted backups and one verified off-host copy/restoration | Capacity, recurring off-host transfer/retention, independent key escrow, replacement-host recovery, monitoring and a real alert destination |
 
 ## Gates before public pilot acceptance
 
-1. Verify the owner's email/MFA and real email delivery. Public DNS/HTTPS,
-   SIP certificate renewal setup and SMTP authentication are complete.
-2. Grant the pilot and exercise invitation,
+1. Grant the pilot and exercise invitation delivery,
    enrolment, directory, licence expiry and revocation using current apps.
-3. Configure mobile providers before claiming background ringing. PBX setup and
+   Owner signup/email verification, MFA, public DNS/HTTPS, SIP certificate renewal
+   setup and SMTP authentication are complete.
+2. Configure mobile providers before claiming background ringing. PBX setup and
    pilot calls were explicitly deferred; leave the upstream allowlist empty
    until a provider is chosen. Audio, transfer, permissions and network-change
    acceptance remain unverified rather than being required for this installation.
-4. Complete signed versioned app distribution and operating-system acceptance;
+3. Complete signed versioned app distribution and operating-system acceptance;
    retain matching source and licence notices. Do not overwrite old 0.1.0 assets
    with different binaries.
-5. Finish off-host backup/restore and alert acceptance, and explicitly close the
+4. Configure recurring off-host backup transfer, independent key escrow, retention
+   and alerts, then rehearse replacement-host recovery. Explicitly close the
    functional
    gaps above before describing Sipper as having Bria Enterprise parity.
 
