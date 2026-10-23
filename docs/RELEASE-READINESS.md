@@ -16,6 +16,8 @@ and Linux archive are staged there, with checksums and source manifests. All fiv
 reviewed AMD64 service images are loaded and their configuration digests match
 CI. The Windows candidate still has version 0.1.0 and must not replace the
 existing public release. Nothing is published or started by staging these files.
+Plunk SMTP connectivity from the host passes with verified TLS 1.3; domain
+verification, SMTP authentication and delivery remain unverified.
 See [the single-host deployment guide](../infra/SINGLE-HOST.md).
 
 ## Implemented and checked in this review
@@ -86,8 +88,8 @@ equivalent quality or availability.
 
 ## Gates before public pilot acceptance
 
-1. Resize the host, configure Plunk and its DNS, and finish staging the reviewed
-   source/images. Enable and verify the actual HTTPS service before public cutover.
+1. Resize the host and configure Plunk and its DNS. The reviewed source/images
+   are staged. Enable and verify the actual HTTPS service before public cutover.
 2. Verify the owner's email/MFA, grant the pilot and exercise invitation,
    enrolment, directory, licence expiry and revocation using current apps.
 3. Configure the actual PBX and mobile providers. Check inbound/outbound audio,

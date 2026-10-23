@@ -4,6 +4,8 @@ The target is `116.203.89.206`, with the website and management at `sipper.dev`,
 SIP TLS at `sip.sipper.dev`, and meeting signalling at `meet.sipper.dev`.
 Cloudflare provides DNS; Caddy on the server provides HTTPS. Plunk provides
 outbound account and invitation email. Paid signup remains disabled.
+Manage the zone through [DNS Manager](https://dns.brth.uk) and the sending
+domain through [Plunk domain settings](https://next-app.useplunk.com/settings?tab=domains).
 
 **Current operating decision, 23 October 2026:** this host has 1 GB RAM and is
 for preparation only. Do not start the full application/calling/meeting stack
@@ -18,6 +20,9 @@ manifests are under `/opt/sipper-staging/671f7cdb6aeafcf38729a271c4fefe1591a3e0c
 Use that commit as `--release` when generating configuration for these images.
 The private SMTP template at `/root/sipper-smtp.env` still needs the actual Plunk
 key. No `/etc/sipper` configuration, service startup or DNS cutover has occurred.
+The host reached `smtp.useplunk.com:587` and negotiated verified TLS 1.3 on
+23 October 2026. This checks connectivity only; SMTP authentication and delivery
+still need the real project key and a verified sending domain.
 
 Docker on this host uses the containerd image store and reports manifest IDs;
 the CI manifest records configuration IDs. The staged `manifest.json` records
@@ -79,7 +84,7 @@ published port and rejects unencrypted network connections.
 ## DNS and network cutover
 
 **Wait for a suitably sized host, verified SMTP and ready services before cutover.**
-In Cloudflare, create these records with proxying off (DNS only):
+Through DNS Manager, create these Cloudflare records with proxying off (DNS only):
 
 | Type | Name | Value |
 | --- | --- | --- |
