@@ -6,10 +6,29 @@ it does not certify live deployment or full feature parity.
 
 The owner switched the pilot target to the existing `cd-main` Docker host on
 23 October 2026, retaining `sipper.dev`, Plunk's Connect Dorset project and disabled
-payments. Coolify reports 24 CPU cores and 125.8 GB RAM, with Traefik v3.7 serving
-HTTPS. SSH access is waiting for the owner's Tailscale identity check. No Sipper
-services or private configuration have been installed on `cd-main`; disk space,
-current capacity, media ports and public reachability still need host checks.
+payments. Host checks confirmed 24 CPU cores, 125.8 GiB RAM, about 91 GiB available
+RAM and 218 GiB free disk before installation. Public IPv4 is `176.227.215.65`.
+Sipper's website, portal, database, workers, meeting media/signalling and edge are
+running there. All 37 migrations and restricted gateway grants completed. The
+private database uses verified TLS and a non-superuser application role.
+Calling remains stopped pending the real PBX and public certificate.
+
+All five installed AMD64 images use commit
+`288a338d63b27aeb11d5938adcee3ecb8e078da4`, with archive checksum and image
+configuration digests verified against the passing
+[CI release](https://github.com/hybes/sipper/actions/runs/39949197712).
+Deployment startup exposed unquoted comma-separated tmpfs settings in two Compose
+files. The correction is committed as `bbfcec4`, checked by the shared ingress
+regression test and verified by successful startup of the actual services.
+
+Public cutover is still blocked by Cloudflare's old Worker custom-domain bindings:
+DNS Manager rejects edits to the read-only `@` and `www` placeholder records.
+Those records are unchanged. The new DNS-only `sip` and `meet` A records point
+to cd-main and match authoritative/public resolvers. Public TCP 80, 443 and 7882
+are reachable. Website, support/privacy, portal sign-in/sign-up, health and OAuth
+discovery pass through the actual trusted proxy; direct edge access is denied.
+The existing Coolify HTTPS endpoint remains available. Sipper's public HTTPS,
+browser acceptance, SIP certificate timer, owner account and MFA remain pending.
 
 The earlier Hetzner host, `116.203.89.206`, remains **preparation only** with 1 GB
 RAM. Docker Engine 29.9.2 and Compose 5.6.1 are installed there; Sipper services
@@ -25,8 +44,9 @@ Plunk SMTP connectivity from the Hetzner host to the dashboard's
 selected the existing Connect Dorset project; `sipper.dev` has been added and
 its six email DNS records match both authoritative nameservers and a public
 resolver. Plunk confirmed the sending domain as verified on 23 October 2026;
-SMTP authentication and delivery remain unverified. Shared project tracking
-remains enabled.
+SMTP authentication on cd-main now passes with response 235 over verified TLS 1.3.
+The approved key is stored privately there; no email has been sent and delivery
+remains unverified. Shared project tracking remains enabled.
 See the [shared-host deployment guide](../infra/SHARED-HOST.md) and the retained
 [Hetzner preparation record](../infra/SINGLE-HOST.md).
 
@@ -47,8 +67,9 @@ See the [shared-host deployment guide](../infra/SHARED-HOST.md) and the retained
 - Shared-host overlay with bounded resources, only the edge on the existing
   proxy network, no published web origins, and exact-proxy client-address trust.
   Traefik certificate selection is limited to Sipper hostnames. Local checks
-  cover HTTPS, forged headers, neighbouring-container rejection and another
-  site's routing; these do not establish deployment on `cd-main`.
+  cover HTTPS, forged headers, neighbouring-container rejection, another site's
+  routing and resolved temporary filesystem mounts. Actual host checks confirm
+  service isolation and proxy routing; public Sipper HTTPS is still pending DNS.
 - Real browser checks at desktop and mobile sizes: website pages/navigation,
   login/MFA, pilot grant, expiry error, saved-value reload, audit history and
   ordinary-administrator restrictions. No horizontal document overflow or
@@ -107,10 +128,10 @@ equivalent quality or availability.
 
 ## Gates before public pilot acceptance
 
-1. Finish `cd-main` access, capacity/network checks and deployment, complete SMTP
-   authentication, and test actual email delivery and links. Email DNS is
-   published; the reviewed source/images are staged on the old Hetzner host.
-   Enable and verify the actual HTTPS service before public cutover.
+1. Remove the two old Worker domain bindings in Cloudflare, finish website DNS
+   cutover and verify public HTTPS and SIP certificate renewal. Services are
+   running on cd-main and SMTP authentication passes. Test actual email delivery
+   and links after public HTTPS is ready.
 2. Verify the owner's email/MFA, grant the pilot and exercise invitation,
    enrolment, directory, licence expiry and revocation using current apps.
 3. Configure the actual PBX and mobile providers. Check inbound/outbound audio,
@@ -121,5 +142,5 @@ equivalent quality or availability.
 5. Finish backup/restore and alert acceptance, and explicitly close the functional
    gaps above before describing Sipper as having Bria Enterprise parity.
 
-Payments remain disabled throughout these gates. No live deployment, paid launch,
+Payments remain disabled throughout these gates. No accepted public launch,
 mobile background-call reliability or full parity is claimed by this review.

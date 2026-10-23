@@ -7,17 +7,43 @@ and payments disabled. The old 1 GB Hetzner server remains preparation only.
 Coolify at `https://host.cnnct.uk` reports 24 CPU cores, 125.8 GB RAM, Debian 13,
 Docker 29.8.1 and Compose 5.5.1. Its proxy configuration uses Traefik v3.7 with
 `http` and `https` entrypoints. The dashboard sample at 11:20 UTC showed 12.9%
-CPU and 27.9% memory use. These observations support a small pilot; they are not
-a measured call or meeting capacity. Disk space, current available memory,
-media port conflicts and public network reachability still need host checks.
-Tailscale identifies `cd-main` at `100.110.61.97`, with public endpoint
-`176.227.215.65`. Verify the server's public address before changing DNS.
+CPU and 27.9% memory use. SSH checks subsequently confirmed about 91 GiB available
+RAM and 218 GiB free disk space before installation, with no conflicts on Sipper's
+media ports. These observations support a small pilot; they are not a measured
+call or meeting capacity. Tailscale identifies `cd-main` at `100.110.61.97`.
+The host interface confirms public IPv4 `176.227.215.65`; TCP 80, 443 and 7882
+are reachable from outside the server. WebRTC media acceptance remains open.
 
-**Current state:** the owner approved the target change and storing/testing the
-existing Plunk key on this host. Tailscale SSH is waiting for the owner's identity
-check. No Sipper source, images, private settings or services have been installed
-on `cd-main`, and public website DNS is unchanged. Plunk now marks `sipper.dev`
-as verified. SMTP authentication and delivery remain unverified.
+**Current state:** source is installed at `/opt/sipper`, private settings at
+`/etc/sipper`, and all five AMD64 images from
+`288a338d63b27aeb11d5938adcee3ecb8e078da4` are loaded. The downloaded archive
+checksum and all image configuration digests match the passing
+[CI release](https://github.com/hybes/sipper/actions/runs/39949197712).
+The executable Compose configuration includes the mount-parsing fix in
+`bbfcec47df4500c40633b2031cc3106e518a3532`. All 37 migrations and restricted
+gateway grants completed. PostgreSQL, website, portal, email/push/meeting workers,
+meeting media/signalling and the edge are running. Calling remains stopped.
+
+The approved Connect Dorset Plunk key is stored in `/root/sipper-smtp.env` with
+mode 0600 and copied into the private portal configuration. SMTP AUTH returned
+235 over verified TLS 1.3; no email was sent. Plunk marks `sipper.dev` as verified.
+Account email delivery, the owner account and MFA are still pending.
+
+**Public cutover is blocked:** DNS-only A records for `sip` and `meet` now point
+to `176.227.215.65` and match authoritative/public resolvers. The old Worker owns
+the `sipper.dev` and `www.sipper.dev` placeholder AAAA records. DNS Manager
+rejected editing them as read-only; both remain unchanged. Sign in to Cloudflare,
+remove only those two old Worker custom-domain bindings, then create the intended
+DNS-only A records. A Cloudflare sign-in tab is open in the owner's Chromium.
+The complete public HTTPS certificate, SIP certificate synchronisation and public
+browser acceptance must follow that cutover. No live public launch is claimed.
+
+Checks against the running services pass for the website, support/privacy pages,
+portal sign-in/sign-up, health and OAuth discovery through the actual trusted
+proxy. Direct edge access is rejected, PostgreSQL uses TLS with a non-superuser
+application role, and payment settings are disabled. Coolify's existing public
+HTTPS endpoint still responds. These checks do not establish account workflows,
+public Sipper HTTPS, working calls or meeting audio/video.
 
 ## Proxy and service layout
 
@@ -84,10 +110,12 @@ deployment or rotate its authentication/encryption keys during updates. Only
 `config --quiet` is suitable for shared logs; full Compose output includes
 secrets. Use `--upstreams` with approved PBX hostnames when preparing calling.
 
-The five images staged on the old Hetzner host use release
-`671f7cdb6aeafcf38729a271c4fefe1591a3e0c5`. They have verified AMD64 manifests.
-Newer deployment configuration can use those images because it does not change
-their application code. Record source and image revisions separately.
+The installed images on `cd-main` use release
+`288a338d63b27aeb11d5938adcee3ecb8e078da4`. The archive, checksum, CI manifest and
+verified deployed-image manifest are retained under
+`/opt/sipper-staging/288a338d63b27aeb11d5938adcee3ecb8e078da4/linux`.
+The later Compose mount fix changes no application image. Record source and image
+revisions separately. The older Hetzner preparation still has its earlier images.
 
 ## Start and cut over
 
@@ -132,5 +160,5 @@ python3 infra/single-host/test-runtime.py
 The shared ingress check uses the pinned Traefik v3.7 and Caddy images in
 disposable containers. It verifies TLS, routes, client addresses, forged-header
 rejection, denial of direct/nearby-container access, another site's routing,
-private origins and resource limits. It does not contact a public PBX, request
+private origins, resource limits and resolved temporary filesystem mounts. It does not contact a public PBX, request
 real certificates or send email.
