@@ -60,7 +60,7 @@ export function MessagesPage() {
     <${PageHeader} title="Messages" />
     ${!entry ? html`<div class="page-body"><${EmptyState} title="Managed messages"
       description="Sign in and connect a licensed customer to message their people.">
-      <${Button} onClick=${() => ui.navigate({ kind: 'settings', tab: 'managed' })}>Managed accounts</${Button}>
+      <${Button} onClick=${() => ui.navigate({ kind: 'settings', tab: 'managed' })}>Account settings</${Button}>
     </${EmptyState}></div>` : html`
       <div class="directory-toolbar"><${Select} label="Customer" value=${entry.deviceId} disabled=${locked} onChange=${setDevice}
         options=${entries.map(e => ({ value: e.deviceId, label: managed.organisations.find(o => o.id === e.organisationId)?.name ?? 'Managed customer' }))} /></div>

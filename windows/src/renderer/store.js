@@ -61,3 +61,14 @@ export function accountLabel(state, id, fallback = 'Removed account') {
   const account = accountByID(state, id);
   return account ? displayLabel(account) : fallback;
 }
+
+/**
+ * How the window is laid out:
+ *  - welcome:  no accounts yet, so lead with sign-in or manual setup
+ *  - managed:  only accounts provided by an organisation, so a phone-focused layout
+ *  - standard: personal accounts, with profiles and every setting
+ */
+export function appMode(state) {
+  if (state.accounts.length === 0) return 'welcome';
+  return state.accounts.every((a) => a.managed) ? 'managed' : 'standard';
+}

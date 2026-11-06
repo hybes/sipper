@@ -102,6 +102,13 @@ struct ManagedSettingsView: View {
                     }
                     if let date = managed.refreshedAt { LabeledContent("Last checked", value: date.formatted(date: .omitted, time: .standard)).foregroundStyle(.secondary) }
                     Link("Open management portal", destination: client.serverURL.appendingPathComponent("portal"))
+                    Button("Add a personal account…") {
+                        (NSApp.delegate as? AppDelegate)?.showMainWindow()
+                        // A closed main window is recreated asynchronously; let it subscribe first.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            NotificationCenter.default.post(name: .sipperAddAccount, object: nil)
+                        }
+                    }
                 } header: { Text("Your organisations") } footer: {
                     Text("Availability is your stated status for this customer and stays until changed or cleared; it does not change calling. Do Not Disturb applies across your devices. Gateway calls stop immediately; direct PBX calls stop after the app refreshes its settings. Calls already ringing or connected continue. Refresh to check an unavailable preference.")
                 }.disabled(managed.isWorking)

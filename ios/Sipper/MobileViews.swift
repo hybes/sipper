@@ -51,24 +51,53 @@ struct MobileRootView: View {
     }
 }
 
+/// First screen until a calling account exists: managed sign-in first, manual SIP set-up second.
+struct MobileWelcome: View {
+    @EnvironmentObject private var state: MobileState
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Welcome to Sipper").font(.largeTitle.bold())
+                if let client = state.managed {
+                    if client.isSigningIn {
+                        Text(client.signInStatus ?? "Complete sign-in in your browser.").font(.body)
+                        Button("Cancel sign-in") { client.cancelSignIn() }.buttonStyle(.bordered)
+                    } else if client.isSignedIn {
+                        Text("Signed in as \(client.identity?.email ?? "your account"). Your phone lines appear here as soon as your organisation assigns them.")
+                    } else {
+                        Text("Use the email your organisation or provider set up for you. Your phone lines are added automatically.")
+                            .foregroundStyle(.secondary)
+                        Button { Task { await state.signIn() } } label: {
+                            Text("Sign in").font(.headline).frame(maxWidth: .infinity, minHeight: 44)
+                        }.buttonStyle(.borderedProminent).disabled(state.managedBusy)
+                    }
+                    if let message = state.managedMessage { Text(message).font(.footnote).foregroundStyle(.red) }
+                }
+                Divider().padding(.vertical, 8)
+                Text("Enter SIP details yourself. No sign-in needed.").foregroundStyle(.secondary)
+                Button { state.startManualSetup() } label: {
+                    Text("Set up manually").font(.headline).frame(maxWidth: .infinity, minHeight: 44)
+                }.buttonStyle(.bordered)
+            }.padding(24).frame(maxWidth: 440).frame(maxWidth: .infinity)
+        }.navigationTitle("Sipper").navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 struct MobileDialler: View {
     @EnvironmentObject private var state: MobileState
     @State private var calling = false
     private let keys = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["*", "0", "#"]]
     var body: some View {
+        if state.accounts.isEmpty { MobileWelcome() } else { dialler }
+    }
+    private var dialler: some View {
         ScrollView {
             VStack(spacing: 24) {
-                if state.accounts.isEmpty {
-                    Label("Add a calling account to get started", systemImage: "phone.badge.plus").font(.headline)
-                    Text("Use your own SIP details or sign in with your organisation under Accounts.")
-                        .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                } else {
-                    Picker("Calling account", selection: $state.selectedAccountID) {
-                        ForEach(state.accounts.filter(\.isEnabled)) { account in Text(account.displayLabel).tag(Optional(account.id)) }
-                    }.pickerStyle(.menu)
-                    if let id = state.selectedAccountID {
-                        Text((state.registrations[id] ?? .unregistered).shortLabel).font(.subheadline).foregroundStyle(.secondary)
-                    }
+                Picker("Calling account", selection: $state.selectedAccountID) {
+                    ForEach(state.accounts.filter(\.isEnabled)) { account in Text(account.displayLabel).tag(Optional(account.id)) }
+                }.pickerStyle(.menu)
+                if let id = state.selectedAccountID {
+                    Text((state.registrations[id] ?? .unregistered).shortLabel).font(.subheadline).foregroundStyle(.secondary)
                 }
                 HStack {
                     TextField(state.accounts.first { $0.id == state.selectedAccountID }?.managed?.mode == .gateway ? "Phone number or extension" : "Number or SIP address", text: $state.dialTarget)
@@ -412,6 +441,9 @@ struct MobileAccounts: View {
                     if state.managedBusy { ProgressView().accessibilityLabel("Updating managed accounts") }
                 }
             }
+            Section("Calls") {
+                Toggle("Play a tone when a call ends", isOn: Binding(get: { state.hangupToneEnabled }, set: state.setHangupTone))
+            }
             Section {
                 Link("Support", destination: URL(string: "https://sipper.dev/support")!)
                 Link("Privacy", destination: URL(string: "https://sipper.dev/privacy")!)
@@ -419,6 +451,8 @@ struct MobileAccounts: View {
             }
         }
         .navigationTitle("Accounts")
+        .onAppear(perform: openRequestedSetup)
+        .onChange(of: state.manualSetupRequested) { _ in openRequestedSetup() }
         .sheet(item: $editor) { account in NavigationStack { MobileAccountEditor(account: account, password: state.saved(account.id)?.password ?? "") } }
         .confirmationDialog("Delete this account?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
             Button("Delete account", role: .destructive) {
@@ -437,6 +471,11 @@ struct MobileAccounts: View {
             }
             Button("Cancel", role: .cancel) { disconnecting = nil }
         } message: { Text("This customer’s managed accounts and shared contacts will be removed from this device. Calls already connected can finish. Personal accounts and other customers are kept.") }
+    }
+    private func openRequestedSetup() {
+        guard state.manualSetupRequested else { return }
+        state.consumeManualSetup()
+        editor = SIPAccount(profileID: UUID(), username: "", domain: "", transport: .tls, srtp: .mandatory)
     }
 }
 

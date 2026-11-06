@@ -69,6 +69,9 @@ struct AppSettings: Codable, Hashable {
     var showMenuBarItem: Bool
     var muteMicrophoneOnAnswer: Bool
     var confirmBeforeHangUp: Bool
+    var playHangupTone: Bool
+    /// Shows network, codec and other technical settings when only managed accounts are in use.
+    var showAdvancedSettings: Bool
     var lastUsedAccountID: UUID?
 
     // iCloud
@@ -108,6 +111,8 @@ struct AppSettings: Codable, Hashable {
         showMenuBarItem = true
         muteMicrophoneOnAnswer = false
         confirmBeforeHangUp = false
+        playHangupTone = true
+        showAdvancedSettings = false
         lastUsedAccountID = nil
         iCloudSync = false
         iCloudSyncHistory = false
@@ -128,7 +133,7 @@ struct AppSettings: Codable, Hashable {
     private enum CodingKeys: String, CodingKey {
         case inputDeviceName, outputDeviceName, ringtone, ringVolume, echoMode
         case echoTailMilliseconds, codecs, showNotifications, messageNotifications, showIncomingCallAlert, doNotDisturb, launchAtLogin
-        case startHidden, showMenuBarItem, muteMicrophoneOnAnswer, confirmBeforeHangUp, iCloudSync, iCloudSyncHistory
+        case startHidden, showMenuBarItem, muteMicrophoneOnAnswer, confirmBeforeHangUp, playHangupTone, showAdvancedSettings, iCloudSync, iCloudSyncHistory
         case recordCalls, recordingsFolderPath, convertRecordingsToM4A, autoAnswerSeconds
         case lastUsedAccountID, stunServer, verifyTLSCertificates, localUDPPort, localTCPPort, localTLSPort
         case userAgent, defaultTransport, sipLogLevel
@@ -153,6 +158,8 @@ struct AppSettings: Codable, Hashable {
         showMenuBarItem = c.decode(.showMenuBarItem, default: d.showMenuBarItem)
         muteMicrophoneOnAnswer = c.decode(.muteMicrophoneOnAnswer, default: d.muteMicrophoneOnAnswer)
         confirmBeforeHangUp = c.decode(.confirmBeforeHangUp, default: d.confirmBeforeHangUp)
+        playHangupTone = c.decode(.playHangupTone, default: d.playHangupTone)
+        showAdvancedSettings = c.decode(.showAdvancedSettings, default: d.showAdvancedSettings)
         lastUsedAccountID = c.decodeOptional(.lastUsedAccountID)
         iCloudSync = c.decode(.iCloudSync, default: d.iCloudSync)
         iCloudSyncHistory = c.decode(.iCloudSyncHistory, default: d.iCloudSyncHistory)

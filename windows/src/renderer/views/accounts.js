@@ -59,7 +59,7 @@ export function AccountPage({ id }) {
   return html`<div class="page">
     <${PageHeader} title=${displayLabel(account)}>
       <${Button} icon="sync" disabled=${!live} onClick=${() => act('reRegister', account.id)}>Re-register</${Button}>
-      ${account.managed ? html`<${Button} onClick=${managedSettings}>Managed accounts</${Button}>` : html`<${Button} icon="edit" onClick=${() => ui.openDialog({ kind: 'editAccount', id: account.id })}>Edit</${Button}>`}
+      ${account.managed ? html`<${Button} onClick=${managedSettings}>Account settings</${Button}>` : html`<${Button} icon="edit" onClick=${() => ui.openDialog({ kind: 'editAccount', id: account.id })}>Edit</${Button}>`}
     </${PageHeader}>
     <div class="page-body scroll">
       <div class="detail">
@@ -125,7 +125,7 @@ export function ProfilePage({ id }) {
 
   return html`<div class="page">
     <${PageHeader} title=${profile.name}>
-      ${profile.managed ? html`<${Button} onClick=${() => ui.navigate({ kind: 'settings', tab: 'managed' })}>Managed accounts</${Button}>` : html`
+      ${profile.managed ? html`<${Button} onClick=${() => ui.navigate({ kind: 'settings', tab: 'managed' })}>Account settings</${Button}>` : html`
       <${Button} icon="personAdd" onClick=${() => ui.openDialog({ kind: 'addAccount', profileID: profile.id })}>Add account</${Button}>
       <${Button} icon="edit" onClick=${() => ui.openDialog({ kind: 'editProfile', id: profile.id })}>Edit</${Button}>`}
     </${PageHeader}>
@@ -258,7 +258,7 @@ export function AccountDialog({ mode }) {
     <${Button} kind="accent" disabled=${Boolean(validation) || saving} onClick=${save}>${editing ? 'Save' : 'Add account'}</${Button}>`;
 
   if (existing?.managed) return html`<${Dialog} title="Managed account" onClose=${ui.closeDialog}>
-    <p>Your organisation manages this account. Open Settings → Managed accounts to disconnect it.</p>
+    <p>Your organisation manages this account. Open Settings → Account to disconnect it.</p>
   </${Dialog}>`;
 
   return html`<${Dialog} title=${editing ? 'Edit account' : 'Add account'} onClose=${ui.closeDialog} width=${600} footer=${footer}>
@@ -377,7 +377,7 @@ export function ProfileDialog({ mode }) {
     <${Button} kind="accent" disabled=${!valid} onClick=${save}>${editing ? 'Save' : 'Add profile'}</${Button}>`;
 
   if (draft.managed) return html`<${Dialog} title="Managed profile" onClose=${ui.closeDialog}>
-    <p>Your organisation manages this profile. Open Settings → Managed accounts to disconnect it.</p>
+    <p>Your organisation manages this profile. Open Settings → Account to disconnect it.</p>
   </${Dialog}>`;
 
   return html`<${Dialog} title=${editing ? 'Edit profile' : 'Add profile'} onClose=${ui.closeDialog} width=${460} footer=${footer}>

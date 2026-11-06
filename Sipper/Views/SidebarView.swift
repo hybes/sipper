@@ -32,6 +32,15 @@ struct SidebarView: View {
                     .tag(SidebarItem.messages)
             }
 
+            if state.isManagedOnly {
+                Section("Phone lines") {
+                    ForEach(state.managedPhoneLines) { account in
+                        AccountRow(account: account, profileEnabled: state.profile(for: account.profileID)?.isEnabled ?? true)
+                            .tag(SidebarItem.account(account.id))
+                            .contextMenu { accountMenu(account) }
+                    }
+                }
+            } else if !(state.needsSetup && state.profiles.count <= 1) {
             ForEach(state.profiles) { profile in
                 Section(isExpanded: expandedBinding(for: profile.id)) {
                     let members = state.accounts(in: profile.id)
@@ -55,6 +64,7 @@ struct SidebarView: View {
                 } header: {
                     ProfileHeader(profile: profile, sheet: $sheet, profileToDelete: $profileToDelete)
                 }
+            }
             }
         }
         .listStyle(.sidebar)
@@ -112,15 +122,17 @@ struct SidebarView: View {
 
     private var bottomBar: some View {
         HStack {
-            Menu {
-                Button("Add Account…") { sheet = .addAccount(profileID: nil) }
-                Button("Add Profile…") { sheet = .addProfile }
-            } label: {
-                Image(systemName: "plus")
+            if !state.isManagedOnly {
+                Menu {
+                    Button("Add Account…") { sheet = .addAccount(profileID: nil) }
+                    Button("Add Profile…") { sheet = .addProfile }
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("Add an account or profile")
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("Add an account or profile")
             Spacer()
             engineStatus
         }

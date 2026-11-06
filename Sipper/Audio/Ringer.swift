@@ -43,6 +43,20 @@ final class Ringer {
     }
 
     var isPlaying: Bool { player?.isPlaying ?? false }
+
+    private var tonePlayer: AVAudioPlayer?
+    /// How many call-ended tones were started; lets tests check the decision without hearing audio.
+    private(set) var hangupTonesPlayed = 0
+
+    /// Short descending three-beep tone played once when a call ends.
+    func playHangupTone() {
+        hangupTonesPlayed += 1
+        guard let player = try? AVAudioPlayer(data: RingtoneSynth.hangupToneWAV, fileTypeHint: AVFileType.wav.rawValue) else { return }
+        tonePlayer?.stop()
+        player.prepareToPlay()
+        player.play()
+        tonePlayer = player
+    }
 }
 
 enum RingtoneSynth {
@@ -56,6 +70,19 @@ enum RingtoneSynth {
         let data = wavData(for: choice)
         cache[choice] = data
         return data
+    }
+
+    /// Call-ended tone: 880, 660 then 440 Hz, 120 ms each with 60 ms gaps, about -12 dBFS.
+    static let hangupToneWAV: Data = wav(hangupToneSamples)
+
+    static var hangupToneSamples: [Float] {
+        let level = 0.25
+        var samples: [Float] = []
+        for (index, frequency) in [880.0, 660.0, 440.0].enumerated() {
+            samples += cadence([(0.12, true)]) { t in sin(2 * .pi * frequency * t) * level }
+            if index < 2 { samples += [Float](repeating: 0, count: Int(0.06 * sampleRate)) }
+        }
+        return samples
     }
 
     static func wavData(for choice: RingtoneChoice) -> Data {

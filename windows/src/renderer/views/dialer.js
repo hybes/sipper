@@ -8,7 +8,7 @@ import {
 } from '../components.js';
 import { html, useEffect, useRef, useState } from '../lib.js';
 import {
-  accountByID, accountIsLive, accountsIn, act, activeCall, dialerAccount, registrationOf, useAppState,
+  accountByID, accountIsLive, accountsIn, act, activeCall, appMode, dialerAccount, registrationOf, useAppState,
 } from '../store.js';
 import { useUI } from '../ui.js';
 import { recordIcon, recordTone } from './actions.js';
@@ -30,7 +30,7 @@ export function DialerPage() {
   }
   return html`<div class="page">
     <${PageHeader} title="Dialer">
-      <${Button} icon="personAdd" onClick=${() => ui.openDialog({ kind: 'addAccount', profileID: null })}>Add account</${Button}>
+      ${appMode(state) === 'managed' ? null : html`<${Button} icon="personAdd" onClick=${() => ui.openDialog({ kind: 'addAccount', profileID: null })}>Add account</${Button}>`}
     </${PageHeader}>
     <div class="page-body scroll">${body}</div>
   </div>`;

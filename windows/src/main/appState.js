@@ -13,6 +13,7 @@
 //   incomingCall ({ call, accountLabel, ring, showAlert, notify })
 //   ringingEnded ({ callId, anyStillRinging })   stop the ringtone / close the alert for a call
 //   missedCall (record)           post a missed-call notification
+//   hangupTone ({ volume })       play the call-ended tone
 //   launchAtLoginChanged (enabled), trayVisibilityChanged (visible)
 
 import { EventEmitter } from 'node:events';
@@ -286,10 +287,14 @@ export class AppState extends EventEmitter {
   async restartEngine() {
     if (this.engineStarting) await this.engineStarting;
     if (this.engineStatus.running && this.engine.isAlive) {
+      // Calls ended by the stop are not hangups the person made or heard: no call-ended tone.
+      this.engineStopping = true;
       try {
         await this.engine.request('stop');
       } catch (error) {
         this.log.append(`Sipper: stopping the SIP engine failed: ${error.message}`);
+      } finally {
+        this.engineStopping = false;
       }
     }
     this.engineStatus = { ...this.engineStatus, running: false };
@@ -1306,9 +1311,18 @@ export class AppState extends EventEmitter {
     this.recordingRequests.delete(call.id);
     this.recordingOptOuts.delete(call.id);
     this.transferStatus = null;
+    if (this.#shouldPlayHangupTone(call)) this.emit('hangupTone', { volume: this.settings.ringVolume });
     if (this.selectedCallID === call.id) this.selectedCallID = this.calls[0]?.id ?? null;
     if (!this.calls.length) this.showingNewCall = false;
     this.#changed('calls', 'history', 'selectedCallID', 'transferStatus', 'showingNewCall');
+  }
+
+  // Only for calls that connected or that this side placed: not missed or declined calls, not
+  // while another call is still connected, and not when the engine stops (quitting the app).
+  #shouldPlayHangupTone(call) {
+    if (!this.settings.playHangupTone || this.stopping || this.engineStopping || !this.engineStatus.running) return false;
+    if (!call.connectedAt && call.direction !== 'outgoing') return false;
+    return !this.calls.some((c) => c.state === 'confirmed');
   }
 
   #onTransferStatus(event) {

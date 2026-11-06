@@ -206,6 +206,7 @@ export class ManagedClient extends EventEmitter {
     const url = new URL(value);
     if (url.username || url.password || url.port || url.hash || url.searchParams.get('state') !== pending.state) return true;
     pending.exchanging = true;
+    let signedIn = false;
     // Keep the pending object until completion so cancellation invalidates an in-flight exchange.
     clearTimeout(pending.timer);
     this.status.busy = true; this.#changed();
@@ -221,12 +222,15 @@ export class ManagedClient extends EventEmitter {
       this.store.save(next); // Nothing is bound or retained until the verified identity is safely saved.
       this.#data = next;
       this.status.error = null;
+      signedIn = true;
     } catch (error) {
       this.status.error = error instanceof ManagedError ? error.message : 'Sign-in could not be completed. Please try again.';
     } finally {
       if (this.#pending === pending) this.cancelSignIn();
       this.status.busy = false; this.#changed();
     }
+    // Only an interactive sign-in that verified and saved an identity reaches here with signedIn.
+    if (signedIn) this.emit('signedIn');
     return true;
   }
   async #operation(fn) {

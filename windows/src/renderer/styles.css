@@ -282,6 +282,8 @@ img { display: block; }
 .account-voicemail { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 600; color: var(--accent-text); }
 .account-in-call { color: var(--success-text); }
 .sidebar-empty-add { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 12px 0 30px; color: var(--text-2); }
+.sidebar-heading { padding: 0 12px 4px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.phone-lines .account-row { padding-left: 12px; }
 .sidebar-footer { display: flex; flex-direction: column; gap: 2px; padding: 8px 8px 0; border-top: 1px solid var(--layer-stroke); }
 .sidebar-footer-row { display: flex; align-items: center; gap: 8px; padding: 0 4px 4px; }
 .sidebar-status {
@@ -844,7 +846,8 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 /* Settings */
 
 .settings-tabs { padding: 0 28px; }
-.tablist { display: flex; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--layer-stroke); }
+/* Tabs wrap onto a second row in a narrow window rather than scrolling. */
+.tablist { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--layer-stroke); }
 .tab { position: relative; flex: none; padding: 8px 12px 10px; border: 0; background: transparent; color: var(--text-2); }
 .tab:hover { color: var(--text); }
 .tab.selected { color: var(--text); font-weight: 600; }
@@ -931,3 +934,17 @@ body.incoming-window { background: var(--window); }
 .incoming-detail { overflow: hidden; font-size: 13px; color: var(--text-2); text-overflow: ellipsis; white-space: nowrap; }
 .incoming-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .incoming-actions .button { min-height: 36px; font-weight: 600; }
+
+/* Welcome: no accounts yet */
+
+.shell-welcome { grid-template-columns: minmax(0, 1fr); }
+.shell-welcome .content { border-left: 0; border-top-left-radius: 0; }
+.welcome { flex: 1; min-height: 0; overflow: auto; }
+.welcome-inner { display: flex; flex-direction: column; align-items: center; gap: 16px; max-width: 440px; margin: 0 auto; padding: 56px 24px 32px; }
+.welcome-title { font: 600 24px/32px var(--font-display); }
+.welcome-option { display: flex; flex-direction: column; gap: 8px; width: 100%; padding: 16px 20px; border: 1px solid var(--card-stroke); border-radius: var(--radius-card); background: var(--card); }
+.welcome-option-title { font-size: 14px; font-weight: 600; }
+.welcome-text, .welcome-status { color: var(--text-2); }
+.welcome-status strong { color: var(--text); font-weight: 600; }
+.welcome-actions { display: flex; gap: 8px; margin-top: 4px; }
+.welcome-links { display: flex; gap: 16px; margin-top: 4px; }

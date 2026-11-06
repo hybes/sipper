@@ -150,7 +150,7 @@ function CompanyDirectory({ sources }) {
     <${PageHeader} title="Contacts">${sources}</${PageHeader}>
     ${!entry ? html`<div class="page-body"><${EmptyState} icon="contacts" title="Company directory"
       description="Sign in and connect a managed customer to see their shared contacts.">
-      <${Button} onClick=${() => ui.navigate({ kind: 'settings', tab: 'managed' })}>Managed accounts</${Button}>
+      <${Button} onClick=${() => ui.navigate({ kind: 'settings', tab: 'managed' })}>Account settings</${Button}>
     </${EmptyState}></div>` : html`
       <div class="directory-toolbar">
         <${Select} label="Customer" value=${deviceId} options=${entries.map(e => ({ value: e.deviceId,

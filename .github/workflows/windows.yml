@@ -1,6 +1,7 @@
 # Builds and tests Sipper for Windows: PJSIP and Opus with MSVC (cached), the engine and browser
 # helper, unit tests, a two-engine call test, the NSIS installer, and an end-to-end test of the
-# packaged app against tools/sip-test-server.py. The installer is uploaded as an artifact.
+# packaged app against tools/sip-test-server.py. The installer, its blockmap and latest.yml (the
+# in-app updater's manifest) are uploaded as an artifact and attached to the v<version> release.
 name: Windows app
 
 on:
@@ -104,6 +105,7 @@ jobs:
           path: |
             windows/dist/Sipper-*-Setup.exe
             windows/dist/Sipper-*-Setup.exe.blockmap
+            windows/dist/latest.yml
           if-no-files-found: error
 
       - name: Upload test screenshots and logs

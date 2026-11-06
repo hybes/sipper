@@ -22,6 +22,21 @@ final class ManagedAccountsTests: XCTestCase {
         return (state, passwords)
     }
 
+    func testLayoutModeFollowsWhichAccountsExist() throws {
+        let (state, _) = harness()
+        XCTAssertTrue(state.needsSetup, "a fresh install offers sign-in or manual setup")
+        XCTAssertFalse(state.isManagedOnly)
+        try state.applyManagedConfiguration(configuration(), profileID: profileID)
+        XCTAssertFalse(state.needsSetup)
+        XCTAssertTrue(state.isManagedOnly, "only organisation-supplied lines: phone-focused layout")
+        XCTAssertEqual(state.managedPhoneLines.map(\.label), ["Managed example"])
+        _ = try state.addAccount(SIPAccount(profileID: state.manualProfiles[0].id, username: "personal", domain: "sip.example.invalid"), password: "fictional")
+        XCTAssertFalse(state.isManagedOnly, "a personal account brings back the full layout")
+        state.removeManagedAccounts(deviceID: deviceID, profileID: profileID)
+        XCTAssertFalse(state.needsSetup)
+        XCTAssertFalse(state.isManagedOnly)
+    }
+
     func testSetupLinkOnlyOpensManagedFormWithoutImportingOrCalling() throws {
         let (state, _) = harness()
         let accounts = state.accounts

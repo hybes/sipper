@@ -5,6 +5,9 @@ import UserNotifications
 struct SettingsView: View {
     @EnvironmentObject private var state: AppState
 
+    /// Managed-only setups hide the technical tabs unless General › Show advanced settings is on.
+    private var showsAdvanced: Bool { !state.isManagedOnly || state.settings.showAdvancedSettings }
+
     var body: some View {
         TabView {
             GeneralSettingsView()
@@ -13,22 +16,62 @@ struct SettingsView: View {
                 .tabItem { Label("Managed", systemImage: "person.crop.circle.badge.checkmark") }
             AudioSettingsView()
                 .tabItem { Label("Audio", systemImage: "speaker.wave.2") }
-            NetworkSettingsView()
-                .tabItem { Label("Network", systemImage: "network") }
-            CodecSettingsView()
-                .tabItem { Label("Codecs", systemImage: "waveform") }
-            BrowserExtensionSettingsView()
-                .tabItem { Label("Browser", systemImage: "puzzlepiece.extension") }
+            if showsAdvanced {
+                NetworkSettingsView()
+                    .tabItem { Label("Network", systemImage: "network") }
+                CodecSettingsView()
+                    .tabItem { Label("Codecs", systemImage: "waveform") }
+                BrowserExtensionSettingsView()
+                    .tabItem { Label("Browser", systemImage: "puzzlepiece.extension") }
+            }
             RecordingSettingsView()
                 .tabItem { Label("Recording", systemImage: "record.circle") }
             #if SIPPER_ICLOUD
-            SyncSettingsView()
-                .tabItem { Label("iCloud", systemImage: "icloud") }
+            if showsAdvanced {
+                SyncSettingsView()
+                    .tabItem { Label("iCloud", systemImage: "icloud") }
+            }
             #endif
-            DiagnosticsView()
-                .tabItem { Label("Diagnostics", systemImage: "stethoscope") }
+            if showsAdvanced {
+                DiagnosticsView()
+                    .tabItem { Label("Diagnostics", systemImage: "stethoscope") }
+            }
+            AboutSettingsView()
+                .tabItem { Label("About", systemImage: "info.circle") }
         }
         .frame(width: 620, height: 520)
+    }
+}
+
+struct AboutSettingsView: View {
+    @EnvironmentObject private var updater: AppUpdater
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Version", value: updater.version)
+                if updater.isAvailable {
+                    Toggle("Automatically check for updates", isOn: $updater.automaticallyChecksForUpdates)
+                    HStack {
+                        Spacer()
+                        Button("Check Now") { updater.checkForUpdates() }
+                            .disabled(!updater.canCheckForUpdates)
+                    }
+                } else {
+                    Text("Updates are turned off in development builds.")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Sipper")
+            } footer: {
+                Text("Updates are downloaded from GitHub and installed when you choose. Each one is checked against Sipper's signing keys first.")
+            }
+            Section {
+                Link("sipper.dev", destination: URL(string: "https://sipper.dev")!)
+                Link("Source code", destination: URL(string: "https://github.com/hybes/sipper")!)
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 
@@ -75,8 +118,15 @@ struct GeneralSettingsView: View {
             Section("Calls") {
                 Toggle("Do Not Disturb (reject incoming calls as busy)", isOn: $state.settings.doNotDisturb)
                 Toggle("Mute the microphone when answering", isOn: $state.settings.muteMicrophoneOnAnswer)
-                Picker("Transport for new accounts", selection: $state.settings.defaultTransport) {
-                    ForEach(SIPTransport.allCases) { Text($0.displayName).tag($0) }
+                HStack {
+                    Toggle("Play a tone when a call ends", isOn: $state.settings.playHangupTone)
+                    Spacer()
+                    Button("Preview") { state.ringer.playHangupTone() }
+                }
+                if !state.isManagedOnly {
+                    Picker("Transport for new accounts", selection: $state.settings.defaultTransport) {
+                        ForEach(SIPTransport.allCases) { Text($0.displayName).tag($0) }
+                    }
                 }
             }
             Section("Ringtone") {
@@ -95,6 +145,13 @@ struct GeneralSettingsView: View {
                         }
                     }
                     .disabled(state.settings.ringtone == .silent)
+                }
+            }
+            if state.isManagedOnly {
+                Section {
+                    Toggle("Show advanced settings", isOn: $state.settings.showAdvancedSettings)
+                } footer: {
+                    Text("Adds the Network, Codecs, Browser and Diagnostics tabs. Your organisation already sets up your phone lines, so you won't normally need them.")
                 }
             }
         }

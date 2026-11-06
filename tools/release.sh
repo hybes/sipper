@@ -12,6 +12,13 @@
 #   2. Store notarisation credentials in the Keychain (asks for an app-specific password):
 #        xcrun notarytool store-credentials sipper-notary --apple-id <Apple ID> --team-id <TeamID>
 #
+# The update feed: after the DMG, dist/appcast.xml is written and signed with Sipper's Sparkle
+# EdDSA key, stored in the login Keychain under the account "sipper" (Sparkle's generate_keys
+# --account sipper). macOS asks once to let Sparkle's tools use it; choose Always Allow.
+# SPARKLE_KEY_FILE signs with an exported key file instead (generate_keys --account sipper -x FILE);
+# keep that file private and off this repository. Attach both the DMG and appcast.xml to the
+# release tagged v<version>; the app's feed is releases/latest/download/appcast.xml.
+#
 # Without NOTARY_PROFILE the DMG is signed but not notarised. That only checks the packaging:
 # Gatekeeper blocks un-notarised apps on other Macs. SIGN_IDENTITY picks a different certificate
 # (default "Developer ID Application"); a full certificate name is needed when several match.
@@ -67,6 +74,22 @@ rm -rf "$work"
 mkdir -p "$work" "$out"
 app="$work/Sipper.app"
 ditto "$derived/Build/Products/Release/Sipper.app" "$app"
+
+# Xcode re-signs Sparkle.framework on copy but leaves its nested helpers with Sparkle's own
+# signatures, which notarisation rejects. Sign them inside out with the Developer ID, the hardened
+# runtime and a secure timestamp, then the framework and the app (keeping the app's entitlements).
+sparkle="$app/Contents/Frameworks/Sparkle.framework"
+[ -d "$sparkle" ] || fail "Sparkle.framework is missing from the app"
+log "Signing Sparkle's helpers"
+sign() { codesign --force --sign "$identity" --options runtime --timestamp "$@"; }
+for xpc in "$sparkle"/Versions/B/XPCServices/*.xpc; do
+  [ -e "$xpc" ] || continue
+  sign --preserve-metadata=entitlements "$xpc"
+done
+sign "$sparkle/Versions/B/Autoupdate"
+sign "$sparkle/Versions/B/Updater.app"
+sign "$sparkle"
+sign --preserve-metadata=entitlements,requirements,flags "$app"
 version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
 build_number="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")"
 
@@ -119,5 +142,22 @@ if [ -n "$profile" ]; then
 fi
 
 (cd "$out" && shasum -a 256 "$(basename "$dmg")" | tee "$(basename "$dmg").sha256")
-log "Done: $dmg"
+
+log "Writing the update feed (appcast.xml)"
+sparkle_bin="$derived/SourcePackages/artifacts/sparkle/Sparkle/bin"
+[ -x "$sparkle_bin/generate_appcast" ] || fail "Sparkle's generate_appcast is missing from $sparkle_bin"
+feed="$work/appcast"
+mkdir -p "$feed"
+cp "$dmg" "$feed/"
+key_args=(--account sipper)
+if [ -n "${SPARKLE_KEY_FILE:-}" ]; then key_args=(--ed-key-file "$SPARKLE_KEY_FILE"); fi
+"$sparkle_bin/generate_appcast" "${key_args[@]}" \
+  --download-url-prefix "https://github.com/hybes/sipper/releases/download/v$version/" \
+  --link "https://sipper.dev" --maximum-deltas 0 "$feed"
+grep -q "sparkle:edSignature" "$feed/appcast.xml" || fail "appcast.xml has no EdDSA signature"
+grep -q "releases/download/v$version/Sipper-$version.dmg" "$feed/appcast.xml" || fail "appcast.xml does not point at the v$version DMG"
+cp "$feed/appcast.xml" "$out/appcast.xml"
+
+log "Done: $dmg and $out/appcast.xml"
+echo "Publish both on the GitHub release tagged v$version (with the Windows installer and latest.yml)."
 [ -n "$profile" ] || echo "Not notarised: fine for checking the DMG, not for publishing it."

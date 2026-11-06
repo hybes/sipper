@@ -48,6 +48,7 @@ class PhoneModel(private val application: Application, val engine: SipEngine = S
     private var importAttempt = 0
     private val accountChanges = Mutex()
     val ready = MutableStateFlow(false)
+    val hangupTone = MutableStateFlow(HangupTone.enabled(application))
     val pushStatus = MutableStateFlow("Incoming call notifications are not configured in this build.")
     internal val messageNotification = MutableStateFlow<MessageNotification?>(null)
     val messagePushStatus = MutableStateFlow("Message notifications are off.")
@@ -76,12 +77,16 @@ class PhoneModel(private val application: Application, val engine: SipEngine = S
                 history.value = withContext(Dispatchers.IO) { readHistory() }
                 engine.start()
                 bridge = CallBridge(application, engine, scope, managedCalls) { error.value = it }
-                engine.onEnded = { call -> scope.launch {
-                    val next = (listOf(RecentCall(call.id, call.accountId, call.remote, call.incoming, call.connected, System.currentTimeMillis(),
-                        call.destination, call.managedDeviceId, call.accountTitle)) + history.value).take(500)
-                    try { withContext(Dispatchers.IO) { saveHistory(next) }; history.value = next }
-                    catch (_: Exception) { error.value = "This call could not be saved to Recents." }
-                } }
+                engine.onEnded = { call ->
+                    val others = engine.calls.value
+                    scope.launch { if (HangupTone.shouldPlay(call, others, hangupTone.value)) HangupTone.play() }
+                    scope.launch {
+                        val next = (listOf(RecentCall(call.id, call.accountId, call.remote, call.incoming, call.connected, System.currentTimeMillis(),
+                            call.destination, call.managedDeviceId, call.accountTitle)) + history.value).take(500)
+                        try { withContext(Dispatchers.IO) { saveHistory(next) }; history.value = next }
+                        catch (_: Exception) { error.value = "This call could not be saved to Recents." }
+                    }
+                }
                 engine.sync(accounts.value)
                 managed.load()
                 managed.reconcile()
@@ -121,6 +126,10 @@ class PhoneModel(private val application: Application, val engine: SipEngine = S
                 error.value = "Sipper could not load your calling accounts. Your saved settings have been preserved."
             }
         }
+    }
+    fun setHangupTone(enabled: Boolean) {
+        HangupTone.setEnabled(application, enabled)
+        hangupTone.value = enabled
     }
     internal suspend fun awaitReady() { start(); initialised.await() }
     internal suspend fun wakeCall(push: IncomingCallPush): Boolean {
@@ -225,6 +234,18 @@ class PhoneModel(private val application: Application, val engine: SipEngine = S
         managed.reconcile()
         managed.report(engine)
         CallPush.scheduleToken(application)
+    }
+    /** Connects each organisation that has given this person active, licensed access; one failure does not stop the others. */
+    suspend fun connectEligibleOrganisations() {
+        val status = managed.status.value
+        val failures = mutableListOf<String>()
+        for (organisation in status.organisations) {
+            if (organisation.status != "active" || !organisation.licensed) continue
+            if (managed.status.value.connections.any { it.organisationId == organisation.id }) continue
+            error.value = null
+            if (!connectManaged(organisation.id)) failures += "${organisation.name}: ${error.value ?: "could not connect"}"
+        }
+        if (failures.isNotEmpty()) error.value = "Some organisations could not be connected. " + failures.joinToString(" ")
     }
     fun openSetupLink(value: String) {
         try { setupReference(value, managed.origin); setupLink.value = value }

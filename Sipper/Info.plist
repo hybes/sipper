@@ -64,5 +64,13 @@
 	<false/>
 	<key>NSSupportsSuddenTermination</key>
 	<false/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/hybes/sipper/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>L6ffcDkSzwTEUMNv8Wr8MxBbqWhX/lY0Vx7QlCtWFms=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>21600</integer>
 </dict>
 </plist>

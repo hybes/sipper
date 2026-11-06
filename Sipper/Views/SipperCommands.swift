@@ -2,8 +2,16 @@ import SwiftUI
 
 struct SipperCommands: Commands {
     @ObservedObject var state: AppState
+    @ObservedObject var updater: AppUpdater
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            if updater.isAvailable {
+                Button("Check for Updates…") { updater.checkForUpdates() }
+                    .disabled(!updater.canCheckForUpdates)
+            }
+        }
+
         CommandGroup(replacing: .newItem) {
             Button("New Call") {
                 state.prepareNewCall()

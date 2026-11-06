@@ -86,7 +86,11 @@ struct MainWindow: View {
     private var detail: some View {
         switch state.selection ?? .dialer {
         case .dialer:
-            DialerView(sheet: $sheet)
+            if state.needsSetup && !state.hasActiveCalls {
+                WelcomeView(managed: state.managedAccounts, sheet: $sheet)
+            } else {
+                DialerView(sheet: $sheet)
+            }
         case .history:
             HistoryView(sheet: $sheet)
         case .contacts:

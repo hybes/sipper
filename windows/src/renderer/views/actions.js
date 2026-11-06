@@ -64,7 +64,7 @@ export function showAccountMenu(state, ui, account) {
     },
     'separator',
     account.managed
-      ? { label: 'Managed accounts…', onSelect: () => ui.navigate({ kind: 'settings', tab: 'managed' }) }
+      ? { label: 'Account settings…', onSelect: () => ui.navigate({ kind: 'settings', tab: 'managed' }) }
       : { label: 'Delete…', onSelect: () => deleteAccountWithConfirmation(account) },
   ]);
 }

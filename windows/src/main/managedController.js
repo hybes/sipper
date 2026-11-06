@@ -13,6 +13,12 @@ export class ManagedController {
     this.engineStopped = () => this.registrationCodes.clear();
     this.networkRecovered = () => this.refresh().catch(() => {});
     this.settingsChanged = () => this.reconcileMessageAccess();
+    this.signedIn = () => {
+      if (!this.connectAfterSignIn) return;
+      this.connectAfterSignIn = false;
+      this.connectAvailable().catch((error) => { this.client.status.error = error.message; this.reconcile(); });
+    };
+    client.on('signedIn', this.signedIn);
     client.on('change', this.changed);
     state.on('messageNotificationsChanged', this.settingsChanged);
     state.engine.on('registration', this.registration);
@@ -52,6 +58,35 @@ export class ManagedController {
     const snapshot = this.client.snapshot();
     const status = { ...snapshot, error: this.applyError ?? snapshot.error };
     if (JSON.stringify(status) !== JSON.stringify(this.state.managed)) this.state.setManagedStatus(status);
+  }
+
+  /**
+   * Signs in, then connects every organisation that has a licence for this person. Connecting
+   * waits for the client's signedIn event, so a cancelled or failed sign-in connects nothing and
+   * an earlier deliberate disconnect stays in place.
+   */
+  async signIn() {
+    this.connectAfterSignIn = true;
+    try { await this.client.signIn(); }
+    catch (error) { this.connectAfterSignIn = false; throw error; }
+  }
+
+  cancelSignIn() {
+    this.connectAfterSignIn = false;
+    this.client.cancelSignIn();
+  }
+
+  /** Connects each eligible organisation; one failure does not stop the others. */
+  async connectAvailable() {
+    const status = this.client.snapshot();
+    const failures = [];
+    for (const org of status.organisations) {
+      if (this.stopped) return;
+      if (org.status !== 'active' || !org.licensed || status.enrollments.some(e => e.organisationId === org.id)) continue;
+      try { await this.connect(org.id); }
+      catch (error) { failures.push(`${org.name}: ${error.message}`); }
+    }
+    if (failures.length) throw new Error(`Some organisations could not be connected. ${failures.join(' ')}`);
   }
 
   messageConnections() {
@@ -203,6 +238,7 @@ export class ManagedController {
     clearInterval(this.leaseTimer); clearInterval(this.refreshTimer);
     this.client.cancelSignIn();
     this.client.off('change', this.changed);
+    this.client.off('signedIn', this.signedIn);
     this.state.off('messageNotificationsChanged', this.settingsChanged);
     this.state.engine.off('registration', this.registration);
     this.state.engine.off('exit', this.engineStopped);

@@ -63,6 +63,9 @@ final class CallKitBridge: NSObject, ObservableObject, @preconcurrency CXProvide
     var wake: (IncomingManagedCall) async throws -> CallSnapshot? = { _ in nil }
     var onPushDeclined: (IncomingManagedCall) -> Void = { _ in }
     var requestMicrophone: () async -> Bool = { await CallKitBridge.microphonePermission() }
+    /// Plays the hangup tone; nil in tests and while the setting is unavailable.
+    var endTone: HangupTonePlayer?
+    private var pendingEndTone: Date?
 
     init(engine: SIPEngine, reporter: MobileCallReporting? = nil,
          requestTransaction: ((CXTransaction) async throws -> Void)? = nil) {
@@ -495,7 +498,14 @@ final class CallKitBridge: NSObject, ObservableObject, @preconcurrency CXProvide
         else if !action.isComplete { action.fail() }
         dismiss(action.callUUID, reason: .failed)
     }
+    /// Waits for CallKit to release call audio, so the tone neither cuts in on the call nor is cut off by teardown.
+    func playEndTone() {
+        guard let endTone else { return }
+        if audioActive || activatingAction != nil { pendingEndTone = Date() } else { endTone.play() }
+    }
     func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
+        pendingEndTone = nil
+        endTone?.cancel(restoringCallAudio: configureAudio)
         audioActive = false
         guard canUsePhoneAudio() else { try? engine.setCallAudioActive(false); return }
         do { try engine.setCallAudioActive(true); audioActive = true }
@@ -504,5 +514,9 @@ final class CallKitBridge: NSObject, ObservableObject, @preconcurrency CXProvide
     func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
         audioActive = false
         try? engine.setCallAudioActive(false)
+        // Any remaining call, even one still connecting, keeps the session for itself.
+        if let requested = pendingEndTone, Date().timeIntervalSince(requested) < 3,
+           !engine.activeCalls().contains(where: { $0.state != .disconnected }), activatingAction == nil { endTone?.play() }
+        pendingEndTone = nil
     }
 }

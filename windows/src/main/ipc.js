@@ -41,7 +41,7 @@ function popupMenu(win, items) {
   });
 }
 
-export function registerIPC({ state, managed, meetings, rendererBase, windows, notifications, browserHelper, about, actions }) {
+export function registerIPC({ state, managed, meetings, rendererBase, windows, notifications, browserHelper, updater, about, actions }) {
   const fromSipper = (event) => event.senderFrame?.url?.startsWith(rendererBase);
   const guard = (handler) => (event, ...args) => {
     if (!fromSipper(event)) throw new Error('Refused a request from an unknown page.');
@@ -86,9 +86,10 @@ export function registerIPC({ state, managed, meetings, rendererBase, windows, n
   };
 
   const services = {
-    managedSignIn: () => managed.client.signIn(),
-    managedCancelSignIn: () => managed.client.cancelSignIn(),
+    managedSignIn: () => managed.signIn(),
+    managedCancelSignIn: () => managed.cancelSignIn(),
     managedRefresh: () => managed.refresh(),
+    managedConnectAvailable: async () => { await managed.refresh(); await managed.connectAvailable(); },
     managedAvailability: (_win, organisationId, value) => managed.setAvailability(organisationId, value),
     managedDoNotDisturb: (_win, organisationId, enabled) => managed.setDoNotDisturb(organisationId, enabled),
     managedConnect: (_win, organisationId) => managed.connect(organisationId),
@@ -175,6 +176,9 @@ export function registerIPC({ state, managed, meetings, rendererBase, windows, n
       }
     },
     about: () => about(),
+    updateStatus: () => updater.snapshot(),
+    updateCheck: () => updater.check(),
+    updateInstall: () => updater.install(),
     openLicences: () => {
       const folder = app.isPackaged ? path.join(process.resourcesPath, 'Licenses') : path.resolve(app.getAppPath(), '..', 'LICENSE');
       return shell.openPath(folder);

@@ -22,6 +22,7 @@ import { CallNotifications } from './notifications.js';
 import { MemoryPasswordStore, SafeStoragePasswordStore } from './passwords.js';
 import { JSONStore } from './store.js';
 import { SipperTray } from './tray.js';
+import { Updater } from './updater.js';
 import { createMainWindow, IncomingCallWindow, secureWebPreferences } from './windows.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -62,6 +63,7 @@ function start() {
   let notifications = null;
   let managed = null;
   let meetings = null;
+  let updater = null;
   let quitting = false;
   let shutdownComplete = false;
 
@@ -130,9 +132,10 @@ function start() {
     event.preventDefault();
     tray?.destroy();
     incoming?.destroy();
+    updater?.stop();
     Promise.resolve(meetings?.stop()).finally(() => { managed?.stop(); return state.shutdown(); }).finally(() => {
       shutdownComplete = true;
-      app.quit();
+      if (!updater?.finishInstall()) app.quit();
     });
   });
 
@@ -259,6 +262,8 @@ function start() {
     });
     tray.setVisible(state.settings.showTrayIcon);
 
+    updater = new Updater({ app, state, quit, send: (status) => sendToMain('update', status) });
+
     const browserHelper = new BrowserHelper({ dataDir, hostPath: path.join(engineDirectory, exe('sipper-browser-host')) });
 
     registerIPC({
@@ -269,6 +274,7 @@ function start() {
       windows: () => ({ mainWindow, incoming }),
       notifications,
       browserHelper,
+      updater,
       about: () => ({
         version: app.getVersion(),
         pjsip: state.engineStatus.pjsip,
@@ -311,6 +317,7 @@ function start() {
       }
     });
     state.on('missedCall', (record) => notifications.showMissed(record));
+    state.on('hangupTone', (tone) => sendToMain('hangupTone', tone));
     state.on('trayVisibilityChanged', (visible) => tray.setVisible(visible));
     state.on('launchAtLoginChanged', (enabled) => {
       // Only an installed Windows copy registers itself; a development run must not.
@@ -325,6 +332,7 @@ function start() {
     systemPreferences.on?.('accent-color-changed', () => sendToMain('theme', { accent: systemPreferences.getAccentColor?.() }));
 
     managed.start();
+    updater.start().catch((error) => state.log.append(`Updates: ${error.message}`));
     state.startEngine().then(() => {
       for (const link of queuedLinks.splice(0)) openLink(link);
     });

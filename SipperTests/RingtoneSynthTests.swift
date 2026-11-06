@@ -63,6 +63,33 @@ final class RingtoneSynthTests: XCTestCase {
         XCTAssertEqual(RingtoneSynth.cachedWAV(for: .marimba), RingtoneSynth.cachedWAV(for: .marimba))
     }
 
+    func testHangupToneIsThreeDescendingBeepsAtAboutMinus12dBFS() {
+        let data = RingtoneSynth.hangupToneWAV
+        XCTAssertEqual(ascii(data, at: 0), "RIFF")
+        XCTAssertEqual(uint32(data, at: 40), UInt32(data.count - 44))
+        let samples = RingtoneSynth.hangupToneSamples
+        let rate = RingtoneSynth.sampleRate
+        let beep = Int(0.12 * rate), gap = Int(0.06 * rate)
+        XCTAssertEqual(samples.count, beep * 3 + gap * 2, "120 ms beeps with 60 ms gaps")
+        let peak = samples.map { abs($0) }.max() ?? 0
+        XCTAssertEqual(Double(peak), 0.25, accuracy: 0.01, "about -12 dBFS")
+        XCTAssertEqual(abs(samples[0]), 0, "fades in from silence")
+        XCTAssertEqual(abs(samples[beep - 1]), 0, accuracy: 0.01, "fades out before the gap")
+        for gapStart in [beep, beep * 2 + gap] {
+            XCTAssertTrue(samples[gapStart..<gapStart + gap].allSatisfy { $0 == 0 }, "silent gap")
+        }
+        // Zero crossings per beep give the pitch: two per cycle.
+        func frequency(of slice: ArraySlice<Float>) -> Double {
+            let crossings = zip(slice, slice.dropFirst()).filter { ($0 < 0) != ($1 < 0) }.count
+            return Double(crossings) / 2 / (Double(slice.count) / rate)
+        }
+        let starts = [0, beep + gap, (beep + gap) * 2]
+        let pitches = starts.map { frequency(of: samples[$0..<$0 + beep]) }
+        for (pitch, expected) in zip(pitches, [880.0, 660.0, 440.0]) {
+            XCTAssertEqual(pitch, expected, accuracy: expected * 0.03)
+        }
+    }
+
     func testRingtoneChoicesHaveDistinctDisplayNames() {
         let names = RingtoneChoice.allCases.map(\.displayName)
         XCTAssertEqual(Set(names).count, names.count)

@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         return AppState(startEngine: false)
     }()
+    let updater = AppUpdater()
     private var menuBar: MenuBarController?
     private let network = NWPathMonitor()
     private var workspaceObservers: [NSObjectProtocol] = []

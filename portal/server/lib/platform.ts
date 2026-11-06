@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { z } from 'zod'
 import { rows, transaction, getPool, type Database } from './db'
 import { audit, requireAdminMfa, requireOrganisation, requireVerified, requireWorkspace, isPlatformOwner, lockManagedOrganisation, canAdministerOrganisation, type Principal } from './access'
 import { revokeMemberInvitations } from './customer-members'
@@ -194,15 +195,21 @@ export async function setMemberStatus(actor: Principal, organisationId: string, 
   })
 }
 
+/** Creates a calling account; with assignTo, also assigns it to that member in the same transaction. */
 export async function createConfiguration(actor: Principal, organisationId: string, input: unknown) {
-  const value = configurationInput.parse(input)
+  const { assignTo, ...value } = configurationInput.extend({ assignTo: z.string().min(1).max(128).optional() }).parse(input)
   return transaction(async db => {
     const organisation = await requireOrganisation(actor, organisationId, true, db)
+    if (assignTo) requireValue((await rows("SELECT user_id FROM organisation_members WHERE organisation_id=$1 AND user_id=$2 AND status<>'removed' FOR SHARE", [organisationId, assignTo], db))[0])
     const id = randomUUID()
     const envelope = sealSecret(value.password, `sip:${organisationId}:${id}`)
     const config = (await rows(`INSERT INTO sip_configurations (id, organisation_id, label, mode, settings, secret_envelope)
       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id,label,mode,settings,revision`, [id, organisationId, value.label, value.mode, JSON.stringify(value.settings), JSON.stringify(envelope)], db))[0]!
     await audit(db, actor, organisation.workspace_id, 'sip_configuration.created', id, organisationId)
+    if (assignTo) {
+      await db.query('INSERT INTO sip_assignments (organisation_id,configuration_id,user_id) VALUES ($1,$2,$3)', [organisationId, id, assignTo])
+      await audit(db, actor, organisation.workspace_id, 'sip_configuration.assigned', id, organisationId, { userId: assignTo })
+    }
     return config
   })
 }

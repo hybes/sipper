@@ -1273,3 +1273,108 @@ test('failed merge restores consultation hold and failed split resume leaves sep
   assert.match(alerts.at(-1).message, /calls are separate/);
   assert.equal(state.changingAudio, false);
 });
+
+// MARK: Hangup tone
+
+test('the hangup tone plays for connected and outgoing calls only', async t => {
+  const { state, engine } = harness(t); t.after(() => state.shutdown());
+  await state.startEngine();
+  const tones = [];
+  state.on('hangupTone', tone => tones.push(tone));
+
+  const missed = engineCall();
+  engine.emit('incomingCall', { call: missed });
+  engine.emit('callEnded', { call: ended(missed) });
+  assert.equal(tones.length, 0, 'an unanswered incoming call is silent');
+
+  const answered = engineCall({ state: 'confirmed', connectedAt: nextStart });
+  engine.emit('incomingCall', { call: answered });
+  engine.emit('callEnded', { call: ended(answered) });
+  assert.deepEqual(tones, [{ volume: state.settings.ringVolume }]);
+
+  const placed = engineCall({ direction: 'outgoing', state: 'calling' });
+  engine.emit('callEnded', { call: ended(placed, { lastCode: 486 }) });
+  assert.equal(tones.length, 2, 'an outgoing call that ends unanswered still plays the tone');
+
+  const held = engineCall({ id: 7, state: 'confirmed', connectedAt: nextStart });
+  const other = engineCall({ id: 8, state: 'confirmed', connectedAt: nextStart });
+  engine.emit('incomingCall', { call: held });
+  engine.emit('callChanged', { call: held });
+  engine.emit('incomingCall', { call: other });
+  engine.emit('callChanged', { call: other });
+  engine.emit('callEnded', { call: ended(held) });
+  assert.equal(tones.length, 2, 'silent while another call is still connected');
+
+  state.updateSettings({ playHangupTone: false });
+  engine.emit('callEnded', { call: ended(other) });
+  assert.equal(tones.length, 2, 'the setting turns it off');
+});
+
+test('the hangup tone stays silent when the engine restarts', async t => {
+  const { state, engine } = harness(t); t.after(() => state.shutdown());
+  await state.startEngine();
+  const tones = [];
+  state.on('hangupTone', tone => tones.push(tone));
+  const call = engineCall({ state: 'confirmed', connectedAt: nextStart });
+  engine.emit('incomingCall', { call });
+  // The engine ends its calls while handling stop, before it answers the request.
+  engine.responses.stop = () => { engine.emit('callEnded', { call: ended(call) }); return {}; };
+  await state.restartEngine();
+  assert.equal(state.calls.length, 0);
+  assert.equal(tones.length, 0);
+  const next = engineCall({ state: 'confirmed', connectedAt: nextStart });
+  engine.emit('incomingCall', { call: next });
+  engine.emit('callEnded', { call: ended(next) });
+  assert.equal(tones.length, 1, 'calls after the restart play the tone again');
+});
+
+test('the hangup tone stays silent when the engine stops', async t => {
+  const { state, engine } = harness(t); t.after(() => state.shutdown());
+  await state.startEngine();
+  const tones = [];
+  state.on('hangupTone', tone => tones.push(tone));
+  const call = engineCall({ state: 'confirmed', connectedAt: nextStart });
+  engine.emit('incomingCall', { call });
+  engine.emit('exit', { code: 1 });
+  assert.equal(state.calls.length, 0);
+  assert.equal(tones.length, 0);
+});
+
+test('signing in connects each licensed organisation, and only after a successful sign-in', async t => {
+  const { state } = harness(t);
+  const client = new EventEmitter();
+  let snapshot = { signedIn: true, signingIn: false, busy: false, error: null, identity: { id: 'u', email: 'ben@example.com' }, organisations: [
+    { id: 'licensed', name: 'Licensed', status: 'active', licensed: true },
+    { id: 'failing', name: 'Failing', status: 'active', licensed: true },
+    { id: 'second', name: 'Second', status: 'active', licensed: true },
+    { id: 'unlicensed', name: 'Unlicensed', status: 'active', licensed: false },
+    { id: 'suspended', name: 'Suspended', status: 'suspended', licensed: true },
+  ], enrollments: [] };
+  const connected = [];
+  client.status = {};
+  client.snapshot = () => structuredClone(snapshot);
+  client.configurations = () => [];
+  client.cancelSignIn = () => {};
+  client.signIn = async () => { snapshot = { ...snapshot, signingIn: true }; client.emit('change'); };
+  client.connect = async (id) => {
+    if (id === 'failing') throw new Error('Enrolment failed.');
+    connected.push(id); snapshot.enrollments.push({ organisationId: id, deviceId: `d-${id}`, configured: true });
+  };
+  const controller = new ManagedController({ client, state, metadata: {} }); t.after(() => controller.stop());
+  controller.report = async () => {};
+
+  // Re-authenticating and then cancelling never reconnects anything.
+  await controller.signIn();
+  controller.cancelSignIn();
+  snapshot = { ...snapshot, signingIn: false }; client.emit('change'); await tick();
+  assert.deepEqual(connected, []);
+  client.emit('signedIn'); await tick();
+  assert.deepEqual(connected, [], 'a cancelled sign-in never connects, even if a late result arrives');
+
+  await controller.signIn();
+  snapshot = { ...snapshot, signingIn: false }; client.emit('signedIn'); await tick(); await tick();
+  assert.deepEqual(connected, ['licensed', 'second'], 'a failure for one organisation does not stop the others');
+  assert.match(client.status.error, /Failing: Enrolment failed/);
+  client.emit('signedIn'); await tick();
+  assert.deepEqual(connected, ['licensed', 'second'], 'later events do not reconnect');
+});

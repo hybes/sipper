@@ -95,6 +95,16 @@ test('one person consumes one seat across organisations and any number of device
   assert.equal(new Set(devices.map(d => d.id)).size, 3)
   assert.equal((await rows('SELECT * FROM seat_assignments WHERE workspace_id=$1 AND user_id=$2', [workspace, alice.userId])).length, 1)
 })
+test('a calling account can be created and assigned to one person in one step', async () => {
+  const before = (await rows('SELECT count(*)::int AS n FROM sip_configurations WHERE organisation_id=$1', [organisation]))[0]!.n
+  await assert.rejects(platform.createConfiguration(admin, organisation, { label: 'Stranger', mode: 'direct', settings, password: 'x', assignTo: otherAdmin.userId }), denied('not_found'))
+  // Better Auth user IDs are 32-character strings, not UUIDs: the format is accepted and membership decides.
+  await assert.rejects(platform.createConfiguration(admin, organisation, { label: 'Stranger', mode: 'direct', settings, password: 'x', assignTo: 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6' }), denied('not_found'))
+  assert.equal((await rows('SELECT count(*)::int AS n FROM sip_configurations WHERE organisation_id=$1', [organisation]))[0]!.n, before, 'nothing is created when the person is not a member')
+  const config = await platform.createConfiguration(admin, organisation, { label: 'Second PBX', mode: 'direct', settings, password: 'second-secret', assignTo: alice.userId })
+  assert.deepEqual((await rows('SELECT user_id FROM sip_assignments WHERE configuration_id=$1', [config.id])).map(r => r.user_id), [alice.userId])
+  await management.deleteConfiguration(admin, organisation, config.id)
+})
 test('provisioning is scoped to the enrolled identity and assigned organisation', async () => {
   const config = await platform.createConfiguration(admin, organisation, { label: 'Test SIP', mode: 'direct', settings, password: 'fixture-secret' })
   assert.ok(!JSON.stringify(config).includes('fixture-secret'))

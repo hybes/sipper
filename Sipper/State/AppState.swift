@@ -94,6 +94,11 @@ final class AppState: ObservableObject {
     }()
 
     private var declinedCallIDs: Set<Int> = []
+    /// Calls live when the engine was stopped or restarted. Their end events are not hangups the
+    /// person made or heard, so they get no call-ended tone. Keyed by ID and start time because
+    /// call IDs restart from zero with the engine.
+    private var callsEndedByEngineStop: Set<String> = []
+    private static func toneKey(_ call: CallSnapshot) -> String { "\(call.id):\(call.startedAt.timeIntervalSince1970)" }
     private var callRecordIDs: [Int: UUID] = [:]
     /// Calls the user asked to record (or stopped recording) by hand.
     private var recordingRequests: Set<Int> = []
@@ -250,6 +255,7 @@ final class AppState: ObservableObject {
     }
 
     func restartEngine() {
+        callsEndedByEngineStop.formUnion(calls.map(AppState.toneKey))
         do {
             try engine.restart(settings: settings)
             if !networkAvailable { engine.networkChanged(available: false) }
@@ -274,6 +280,7 @@ final class AppState: ObservableObject {
         incomingTasks.removeAll(); answerTasks.removeAll(); verifiedManagedCalls.removeAll()
         ringer.stop()
         incomingPanel?.close()
+        callsEndedByEngineStop.formUnion(calls.map(AppState.toneKey))
         engine.stop()
         flush()
     }
@@ -422,6 +429,15 @@ final class AppState: ObservableObject {
     // MARK: Profiles
 
     var manualProfiles: [Profile] { profiles.filter { $0.managedOrganisationID == nil } }
+
+    /// No accounts of either kind yet: the main window offers sign-in or manual setup.
+    var needsSetup: Bool { accounts.isEmpty }
+    /// Only accounts supplied by an organisation: the phone-focused layout without account editing.
+    var isManagedOnly: Bool { !accounts.isEmpty && accounts.allSatisfy { $0.managed != nil } }
+    var managedPhoneLines: [SIPAccount] {
+        let order = Dictionary(uniqueKeysWithValues: profiles.enumerated().map { ($1.id, $0) })
+        return accounts.filter { $0.managed != nil }.sorted { (order[$0.profileID] ?? 0) < (order[$1.profileID] ?? 0) }
+    }
 
     func configureManagedCalls(client: ManagedClient) {
         managedCallControl = ManagedCallControl(engine: engine, client: client)
@@ -1258,6 +1274,14 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// The call-ended tone follows connected calls and outgoing calls (including ones that failed or
+    /// were cancelled while ringing), never unanswered incoming calls, and stays quiet while another
+    /// call is connected or ringing.
+    nonisolated static func shouldPlayHangupTone(after call: CallSnapshot, remaining: [CallSnapshot], enabled: Bool) -> Bool {
+        guard enabled, call.connectedAt != nil || call.direction == .outgoing else { return false }
+        return !remaining.contains { $0.state == .confirmed || $0.state == .incoming }
+    }
+
     func markMissedCallsSeen() {
         unseenMissedCalls = 0
     }
@@ -1657,10 +1681,17 @@ extension AppState: SIPEngineDelegate {
             if call.gatewayCallID != nil && verified == nil {
                 call.remoteName = ""; call.remoteNumber = "Incoming managed call"; call.remoteURI = ""
             }
-            if let existing = self.calls.first(where: { $0.id == call.id }), call.remoteName.isEmpty {
+            let existing = self.calls.first(where: { $0.id == call.id })
+            if let existing, call.remoteName.isEmpty {
                 call.remoteName = existing.remoteName
             }
+            var toneCall = call
+            if toneCall.connectedAt == nil { toneCall.connectedAt = existing?.connectedAt }
             self.calls.removeAll { $0.id == call.id }
+            let endedByEngineStop = self.callsEndedByEngineStop.remove(AppState.toneKey(call)) != nil
+            if !endedByEngineStop, AppState.shouldPlayHangupTone(after: toneCall, remaining: self.calls, enabled: self.settings.playHangupTone) {
+                self.ringer.playHangupTone()
+            }
             if self.calls.isEmpty { self.showingNewCall = false }
             self.incomingPanel?.dismiss(callID: call.id)
             if !self.calls.contains(where: { $0.state == .incoming }) {

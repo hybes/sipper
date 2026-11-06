@@ -10,6 +10,21 @@ export function ringtoneWAV(choice) {
   return cache.get(choice);
 }
 
+let hangup = null;
+
+/** The call-ended tone: three short falling beeps (880, 660, 440 Hz), about half a second. */
+export function hangupToneWAV() {
+  hangup ??= wav(hangupToneSamples());
+  return hangup;
+}
+
+export function hangupToneSamples() {
+  const frequencies = [880, 880, 660, 660, 440, 440];
+  const segments = frequencies.map((_, index) => [index % 2 ? 0.06 : 0.12, index % 2 === 0]);
+  // About -12 dBFS: quieter than the ringtone, as it plays near the ear after a call.
+  return cadence(segments, (t, index) => Math.sin(2 * Math.PI * frequencies[index] * t) * 0.25);
+}
+
 function samplesFor(choice) {
   switch (choice) {
     case 'classicUS':
@@ -37,19 +52,19 @@ function dualTone(t, f1, f2) {
 function cadence(segments, tone) {
   const out = [];
   const fade = Math.floor(RINGTONE_SAMPLE_RATE * 0.005);
-  for (const [duration, on] of segments) {
+  segments.forEach(([duration, on], index) => {
     const count = Math.floor(duration * RINGTONE_SAMPLE_RATE);
     for (let i = 0; i < count; i++) {
       if (!on) {
         out.push(0);
         continue;
       }
-      let amplitude = tone(i / RINGTONE_SAMPLE_RATE);
+      let amplitude = tone(i / RINGTONE_SAMPLE_RATE, index);
       if (i < fade) amplitude *= i / fade;
       if (i > count - fade) amplitude *= (count - i) / fade;
       out.push(amplitude);
     }
-  }
+  });
   return Float32Array.from(out);
 }
 

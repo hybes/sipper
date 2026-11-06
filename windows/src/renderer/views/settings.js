@@ -8,7 +8,7 @@ import {
 } from '../components.js';
 import { html, useEffect, useRef, useState } from '../lib.js';
 import { isRinging, onRingingChange, previewRingtone, stopRinging } from '../ringer.js';
-import { act, registrationOf, service, useAppState } from '../store.js';
+import { act, appMode, registrationOf, service, useAppState } from '../store.js';
 import { useUI } from '../ui.js';
 
 const onWindows = () => window.sipper.platform === 'win32';
@@ -16,15 +16,21 @@ const systemName = () => (onWindows() ? 'Windows' : 'System');
 
 const TABS = [
   { id: 'general', label: 'General' },
-  { id: 'managed', label: 'Managed accounts' },
+  { id: 'managed', label: 'Account' },
   { id: 'audio', label: 'Audio' },
-  { id: 'network', label: 'Network' },
-  { id: 'codecs', label: 'Codecs' },
-  { id: 'browser', label: 'Browser extension' },
+  { id: 'network', label: 'Network', advanced: true },
+  { id: 'codecs', label: 'Codecs', advanced: true },
+  { id: 'browser', label: 'Extension', advanced: true },
   { id: 'recording', label: 'Recording' },
-  { id: 'diagnostics', label: 'Diagnostics' },
+  { id: 'diagnostics', label: 'Diagnostics', advanced: true },
   { id: 'about', label: 'About' },
 ];
+
+/** Accounts set up by an organisation get a shorter list; advanced tabs come back on request. */
+function visibleTabs(state) {
+  const managed = appMode(state) === 'managed';
+  return TABS.filter((tab) => !managed || !tab.advanced || state.settings.showAdvancedSettings);
+}
 
 function Section({ title, footnote, children }) {
   return html`<section class="settings-section" aria-label=${title}>
@@ -105,6 +111,9 @@ function ManagedSettings() {
       </${SettingRow}>`)}
     </${Section}>` : null}
     ${status.signedIn || status.error ? html`<${Button} disabled=${busy} onClick=${() => remove(null)}>Sign out${status.signedIn ? '' : ' locally'}</${Button}>` : null}
+    ${appMode(state) === 'managed' ? html`<${Section} title="Personal accounts" footnote="Add a SIP account of your own alongside your organisation's lines. It stays on this computer and is not shared.">
+      <${Button} onClick=${() => ui.openDialog({ kind: 'addAccount', profileID: null })}>Add a personal account…</${Button}>
+    </${Section}>` : null}
   </div>`;
 }
 
@@ -149,13 +158,18 @@ function GeneralSettings() {
         checked=${s.doNotDisturb} onChange=${(on) => update({ doNotDisturb: on })} />
       <${SwitchRow} label="Mute the microphone when answering" checked=${s.muteMicrophoneOnAnswer}
         onChange=${(on) => update({ muteMicrophoneOnAnswer: on })} />
-      <${SettingRow} label="Transport for new accounts">
+      ${appMode(state) === 'managed' ? null : html`<${SettingRow} label="Transport for new accounts">
         <${Select} label="Transport for new accounts" value=${s.defaultTransport} onChange=${(transport) => update({ defaultTransport: transport })}
           options=${TRANSPORTS.map((t) => ({ value: t, label: transportName(t) }))} />
-      </${SettingRow}>
+      </${SettingRow}>`}
       ${onWindows() ? html`<${SettingRow} label="Phone links" description="Choose Sipper for sip: and tel: links. Sipper fills in the dialer and never dials a link by itself.">
         <${Button} icon="open" onClick=${() => service('openExternal', 'ms-settings:defaultapps?registeredAppUser=Sipper')}>Default apps</${Button}>
       </${SettingRow}>` : null}
+    </${Section}>
+
+    <${Section} title="Call ended">
+      <${SwitchRow} label="Play a tone when a call ends" description="Three short beeps when the other side hangs up or you end a call."
+        checked=${s.playHangupTone} onChange=${(on) => update({ playHangupTone: on })} />
     </${Section}>
 
     <${Section} title="Ringtone">
@@ -171,6 +185,10 @@ function GeneralSettings() {
         </${Button}>
       </${SettingRow}>
     </${Section}>
+    ${appMode(state) === 'managed' ? html`<${Section} title="Advanced">
+      <${SwitchRow} label="Show advanced settings" description="Network, codecs, the browser extension and diagnostics. Your organisation sets up your phone lines, so you rarely need these."
+        checked=${s.showAdvancedSettings} onChange=${(on) => update({ showAdvancedSettings: on })} />
+    </${Section}>` : null}
   </div>`;
 }
 
@@ -486,6 +504,48 @@ function DiagnosticsSettings() {
   </div>`;
 }
 
+function updateDescription(update) {
+  switch (update.state) {
+    case 'checking': return 'Checking for updates…';
+    case 'downloading': return `Downloading Sipper ${update.version ?? ''}${update.percent ? ` (${update.percent}%)` : ''}…`;
+    case 'ready': return `Sipper ${update.version} is ready. Restart to finish updating.`;
+    case 'upToDate': return 'Sipper is up to date.';
+    case 'error': return update.error;
+    default: return 'Sipper checks for updates every few hours and downloads them in the background.';
+  }
+}
+
+function UpdateSection() {
+  const state = useAppState();
+  const [update, setUpdate] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    service('updateStatus').then(setUpdate);
+    return window.sipper.on('update', setUpdate);
+  }, []);
+  if (!update) return null;
+  if (!update.supported) {
+    return html`<${Section} title="Updates" footnote="This copy of Sipper is not installed, so it does not update itself.">
+      <${SettingRow} label="Automatic updates" description="Install Sipper from sipper.dev to get automatic updates." />
+    </${Section}>`;
+  }
+  const run = async (action) => {
+    setError(null);
+    try { await service(action); } catch (failure) { setError(cleanError(failure)); }
+  };
+  const busy = update.state === 'checking' || update.state === 'downloading';
+  return html`<${Section} title="Updates">
+    ${error ? html`<${InfoBar} severity="error" title="Updates">${error}</${InfoBar}>` : null}
+    <${SettingRow} label=${update.state === 'ready' ? 'Update ready' : 'Software update'} description=${updateDescription(update)}>
+      ${update.state === 'ready'
+        ? html`<${Button} kind="accent" disabled=${state.calls.length > 0} onClick=${() => run('updateInstall')}>Restart to update</${Button}>`
+        : html`<${Button} disabled=${busy} onClick=${() => run('updateCheck')}>Check now</${Button}>`}
+    </${SettingRow}>
+    <${SwitchRow} label="Check for updates automatically" checked=${state.settings.checkForUpdates}
+      onChange=${(on) => act('updateSettings', { checkForUpdates: on })} />
+  </${Section}>`;
+}
+
 function AboutSettings() {
   const [about, setAbout] = useState(null);
   useEffect(() => {
@@ -500,6 +560,7 @@ function AboutSettings() {
         <p class="secondary">Version ${about.version}</p>
       </div>
     </div>
+    <${UpdateSection} />
     <${Section} title="Details">
       <div class="card card-section">
         <dl class="details-grid">
@@ -534,15 +595,18 @@ const PANELS = {
 };
 
 export function SettingsPage() {
+  const state = useAppState();
   const ui = useUI();
-  const [tab, setTab] = useState(ui.selection.tab ?? 'general');
+  const tabs = visibleTabs(state);
+  const [chosen, setTab] = useState(ui.selection.tab ?? 'general');
   useEffect(() => { if (PANELS[ui.selection.tab]) setTab(ui.selection.tab); }, [ui.selection]);
+  const tab = tabs.some((item) => item.id === chosen) ? chosen : 'general';
   const Panel = PANELS[tab];
   const onKeyDown = (event, index) => {
     const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
     if (!step) return;
     event.preventDefault();
-    const next = TABS[(index + step + TABS.length) % TABS.length];
+    const next = tabs[(index + step + tabs.length) % tabs.length];
     setTab(next.id);
     document.getElementById(`settings-tab-${next.id}`)?.focus();
   };
@@ -550,7 +614,7 @@ export function SettingsPage() {
     <${PageHeader} title="Settings" />
     <div class="settings-tabs">
       <div class="tablist" role="tablist" aria-label="Settings sections">
-        ${TABS.map((item, index) => html`<button type="button" role="tab" id=${`settings-tab-${item.id}`} aria-selected=${String(tab === item.id)}
+        ${tabs.map((item, index) => html`<button type="button" role="tab" id=${`settings-tab-${item.id}`} aria-selected=${String(tab === item.id)}
           aria-controls="settings-panel" tabindex=${tab === item.id ? 0 : -1} class=${cx('tab', tab === item.id && 'selected')}
           onClick=${() => setTab(item.id)} onKeyDown=${(event) => onKeyDown(event, index)}>${item.label}</button>`)}
       </div>

@@ -177,10 +177,46 @@ final class ManagedAccountsController: ObservableObject {
         isWorking = true; message = nil
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-        do { try await client.signIn(presenting: window, useSystemBrowser: useSystemBrowser) }
+        // Only a completed sign-in connects organisations: cancelling a re-authentication with an
+        // existing session must not reconnect an organisation the person disconnected.
+        var completed = false
+        do { try await client.signIn(presenting: window, useSystemBrowser: useSystemBrowser); completed = true }
         catch { message = error.localizedDescription }
         isWorking = false
-        if client.isSignedIn { await refresh() }
+        if client.isSignedIn {
+            await refresh()
+            if completed { await connectEligibleOrganisations() }
+        }
+    }
+
+    /// Refresh from the welcome screen: also connects organisations that have granted access since sign-in.
+    func refreshAndConnect() async {
+        await refresh()
+        await connectEligibleOrganisations()
+    }
+
+    /// After an interactive sign-in, connects this Mac to every organisation that has given the
+    /// person active, licensed access, so their phone lines arrive without a second step.
+    /// Periodic refreshes never do this, so a deliberate disconnect stays disconnected.
+    private func connectEligibleOrganisations() async {
+        guard let client, client.isSignedIn else { return }
+        let eligible = client.organisations.filter { organisation in
+            organisation.status == "active" && organisation.licensed
+                && !client.enrollments.contains { $0.organisationID == organisation.id }
+        }
+        // One organisation failing does not stop the others; every failure stays visible.
+        var failures: [String] = []
+        for organisation in eligible {
+            await connect(organisation)
+            if let message { failures.append("\(organisation.name): \(message)") }
+        }
+        if !failures.isEmpty { message = "Some organisations could not be connected. " + failures.joined(separator: " ") }
+    }
+
+    /// The signed-in email address, or nil when signed out.
+    var signedInEmail: String? {
+        guard let client, client.isSignedIn else { return nil }
+        return client.identity?.email ?? "your account"
     }
 
     func refresh() async {

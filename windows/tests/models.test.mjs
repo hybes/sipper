@@ -12,6 +12,7 @@ import {
 import {
   nextRefresh, parseSIPAddress, parseVoicemail, registration, registrationDetail, registrationShortLabel,
 } from '../src/core/sip.js';
+import { hangupToneSamples, hangupToneWAV, RINGTONE_SAMPLE_RATE } from '../src/core/ringtones.js';
 
 const account = (fields = {}) => makeAccount({ profileID: 'P', username: '1001', domain: 'pbx.example.com', ...fields });
 
@@ -214,4 +215,30 @@ test('registration labels and refresh time', () => {
   assert.equal(registrationShortLabel(registration.unregistered()), 'Off');
   assert.equal(nextRefresh(registration.registered(300, 1000)), 1000 + 295000);
   assert.equal(nextRefresh(registration.registering()), null);
+});
+
+test('new settings default sensibly when missing from an older file', () => {
+  const settings = decodeSettings({ ringVolume: 0.5 }, 'Sipper');
+  assert.equal(settings.playHangupTone, true);
+  assert.equal(settings.showAdvancedSettings, false);
+  assert.equal(settings.checkForUpdates, true);
+  assert.equal(decodeSettings({ playHangupTone: false }, 'Sipper').playHangupTone, false);
+});
+
+test('the hangup tone is three falling beeps, about half a second and quieter than the ringtone', () => {
+  const samples = hangupToneSamples();
+  const seconds = samples.length / RINGTONE_SAMPLE_RATE;
+  assert.ok(seconds > 0.5 && seconds < 0.6, `${seconds}s`);
+  assert.ok(Math.max(...samples.map(Math.abs)) <= 0.25 + 1e-9);
+  // Zero crossings in each beep give its pitch.
+  const beep = (index) => {
+    const start = Math.floor(index * 0.18 * RINGTONE_SAMPLE_RATE), count = Math.floor(0.12 * RINGTONE_SAMPLE_RATE);
+    let crossings = 0;
+    for (let i = start + 1; i < start + count; i++) if ((samples[i - 1] < 0) !== (samples[i] < 0)) crossings++;
+    return crossings / 2 / 0.12;
+  };
+  const pitches = [0, 1, 2].map(beep);
+  assert.ok(Math.abs(pitches[0] - 880) < 30 && Math.abs(pitches[1] - 660) < 30 && Math.abs(pitches[2] - 440) < 30, pitches.join());
+  const wav = hangupToneWAV();
+  assert.equal(String.fromCharCode(...wav.slice(0, 4)), 'RIFF');
 });

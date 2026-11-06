@@ -44,7 +44,14 @@ class MainActivity : ComponentActivity() {
     private var fullScreenCalls by mutableStateOf(true)
     private var afterPermission: (() -> Unit)? = null
     private val signIn = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        model.scope.launch { model.attempt { model.managed.finishSignIn(result.data) }; if (model.managed.status.value.signedIn) model.refreshManaged() }
+        model.scope.launch {
+            // Only a completed sign-in connects organisations; cancelling never reconnects one.
+            val completed = model.attempt { model.managed.finishSignIn(result.data) }
+            if (model.managed.status.value.signedIn) {
+                model.refreshManaged()
+                if (completed) model.connectEligibleOrganisations()
+            }
+        }
     }
     private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) afterPermission?.invoke()
@@ -154,6 +161,8 @@ class MainActivity : ComponentActivity() {
     val history by model.history.collectAsState()
     val error by model.error.collectAsState()
     val ready by model.ready.collectAsState()
+    val managedStatus by model.managed.status.collectAsState()
+    val hangupTone by model.hangupTone.collectAsState()
     val scope = rememberCoroutineScope()
     var page by rememberSaveable { mutableStateOf(0) }
     var messages by remember { mutableStateOf(false) }
@@ -210,7 +219,9 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.padding(bottom = 12.dp))
                 }
                 when (page) {
-                    0 -> Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
+                    0 -> if (accounts.isEmpty()) WelcomeScreen(ready, managedStatus, signIn, onCancelSignIn = { model.managed.cancelSignIn() },
+                        onManualSetup = { page = 2; editor = null; editing = true }, modifier = Modifier.fillMaxWidth().weight(1f))
+                    else Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Call", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp))
                         var menu by remember { mutableStateOf(false) }
                         Box(Modifier.fillMaxWidth()) {
@@ -287,7 +298,14 @@ class MainActivity : ComponentActivity() {
                                         color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
                                 }
                             }
-                        } }
+                          }
+                          item {
+                            Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("Play a tone when a call ends", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                                Switch(hangupTone, { model.setHangupTone(it) }, modifier = Modifier.semantics { contentDescription = "Play a tone when a call ends" })
+                            }
+                          }
+                        }
                     }
                 }
             }
@@ -295,6 +313,30 @@ class MainActivity : ComponentActivity() {
     }
     if (editing) AccountEditor(editor, model, onDismiss = { editing = false })
     if (importing && !messageNavigationLocked) AccountImportSheet(model)
+}
+
+/** First screen until a calling account exists: managed sign-in first, manual SIP set-up second. */
+@Composable private fun WelcomeScreen(ready: Boolean, status: ManagedStatus, signIn: () -> Unit, onCancelSignIn: () -> Unit,
+    onManualSetup: () -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier.verticalScroll(rememberScrollState()).padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Welcome to Sipper", style = MaterialTheme.typography.headlineMedium)
+        if (status.signingIn) {
+            Text("Complete sign-in in your browser.", style = MaterialTheme.typography.bodyLarge)
+            OutlinedButton(onClick = onCancelSignIn, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel sign-in") }
+        } else if (status.signedIn) {
+            Text("Signed in as ${status.identity?.email.orEmpty()}. Your phone lines appear here as soon as your organisation assigns them.",
+                style = MaterialTheme.typography.bodyLarge)
+        } else {
+            Text("Use the email your organisation or provider set up for you. Your phone lines are added automatically.",
+                style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Button(onClick = signIn, enabled = ready && !status.busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Sign in") }
+        }
+        status.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+        HorizontalDivider(Modifier.padding(vertical = 12.dp))
+        Text("Enter SIP details yourself. No sign-in needed.", style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(onClick = onManualSetup, enabled = ready, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Set up manually") }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

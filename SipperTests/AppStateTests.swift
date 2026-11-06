@@ -20,6 +20,7 @@ final class AppStateTests: XCTestCase {
                              startEngine: false)
         // Keep the test run quiet: a ringing call would otherwise play audio.
         state.settings.ringtone = .silent
+        state.settings.playHangupTone = false
         return Harness(state: state, directory: directory, passwords: passwords)
     }
 
@@ -54,6 +55,56 @@ final class AppStateTests: XCTestCase {
         h.state.releaseMeetingAudio(); XCTAssertTrue(h.state.claimMeetingAudio())
         h.state.releaseMeetingAudio()
     }
+    func testHangupToneFollowsConnectedAndOutgoingCallsOnly() {
+        let account = UUID()
+        let connected = CallSnapshot.fixture(id: 1, accountID: account, state: .confirmed, connectedAt: Date()).ended()
+        let missed = CallSnapshot.fixture(id: 2, accountID: account).ended(statusCode: 487)
+        let outgoingFailed = CallSnapshot.fixture(id: 3, accountID: account, direction: .outgoing, state: .early).ended(statusCode: 486)
+        XCTAssertTrue(AppState.shouldPlayHangupTone(after: connected, remaining: [], enabled: true))
+        XCTAssertTrue(AppState.shouldPlayHangupTone(after: outgoingFailed, remaining: [], enabled: true))
+        XCTAssertFalse(AppState.shouldPlayHangupTone(after: missed, remaining: [], enabled: true), "unanswered incoming calls stay quiet")
+        XCTAssertFalse(AppState.shouldPlayHangupTone(after: connected, remaining: [], enabled: false), "setting off")
+        let other = CallSnapshot.fixture(id: 4, accountID: account, state: .confirmed, connectedAt: Date())
+        XCTAssertFalse(AppState.shouldPlayHangupTone(after: connected, remaining: [other], enabled: true), "another call is still connected")
+        let ringing = CallSnapshot.fixture(id: 5, accountID: account)
+        XCTAssertFalse(AppState.shouldPlayHangupTone(after: connected, remaining: [ringing], enabled: true), "the ringtone is playing")
+        var held = other; held.state = .early
+        XCTAssertTrue(AppState.shouldPlayHangupTone(after: connected, remaining: [held], enabled: true))
+    }
+
+    /// Real engine against tools/sip-test-server.py --user 1001:secret --answer-special --special-call-seconds 2
+    func testHangupToneAfterRemoteHangupAndFailedOutgoingCall() async throws {
+        guard ProcessInfo.processInfo.environment["SIPPER_TEST_HANGUP_TONE"] == "127.0.0.1:5070" else {
+            throw XCTSkip("Requires tools/sip-test-server.py on 127.0.0.1:5070 with --answer-special")
+        }
+        let h = makeHarness()
+        let engine = h.state.engine
+        try engine.useNullAudioForTesting()
+        h.state.settings.sipLogLevel = 0
+        h.state.settings.playHangupTone = true
+        h.state.requestMicrophone = { true }
+        let account = try h.state.addAccount(SIPAccount(profileID: h.state.profiles[0].id,
+            username: "1001", domain: "sipper.test", server: "127.0.0.1", port: 5070), password: "secret")
+        h.state.startEngineIfNeeded()
+        defer { engine.stop() }
+        await expectEventually { h.state.registration(for: account.id).isRegistered }
+        let before = h.state.ringer.hangupTonesPlayed
+        h.state.prepareNewCall("*97", from: account.id)
+        h.state.call(h.state.dialString)
+        await expectEventually { h.state.activeCall?.state == .confirmed }
+        await expectEventually { h.state.calls.isEmpty }
+        XCTAssertEqual(h.state.ringer.hangupTonesPlayed, before + 1, "the far end hung up a connected call")
+        h.state.prepareNewCall("9999", from: account.id)
+        h.state.call(h.state.dialString)
+        await expectEventually { h.state.calls.isEmpty && h.state.history.count >= 2 }
+        XCTAssertEqual(h.state.ringer.hangupTonesPlayed, before + 2, "an outgoing call that failed after dialling")
+        h.state.settings.playHangupTone = false
+        h.state.prepareNewCall("9999", from: account.id)
+        h.state.call(h.state.dialString)
+        await expectEventually { h.state.calls.isEmpty && h.state.history.count >= 3 }
+        XCTAssertEqual(h.state.ringer.hangupTonesPlayed, before + 2, "setting off")
+    }
+
     func testFirstLaunchCreatesTheDefaultProfile() {
         let h = makeHarness()
         XCTAssertEqual(h.state.profiles.count, 1)

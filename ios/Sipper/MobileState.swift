@@ -32,6 +32,8 @@ final class MobileState: ObservableObject, @preconcurrency SIPEngineDelegate {
     @Published private(set) var messageNotification: ManagedMessageNotification?
     @Published private(set) var messageNotificationsEnabled = UserDefaults.standard.bool(forKey: "messageNotificationsEnabled")
     @Published private(set) var messageNotificationStatus = "Message notifications are off."
+    @Published private(set) var hangupToneEnabled = HangupTone.enabled
+    @Published private(set) var manualSetupRequested = false
     private(set) var managed: ManagedClient?
     let engine = SIPEngine()
     lazy var callKit: CallKitBridge = {
@@ -80,6 +82,9 @@ final class MobileState: ObservableObject, @preconcurrency SIPEngineDelegate {
             callKit.canUseAccount = { [weak self] id in self?.canUse(id) ?? false }
             callKit.onStarted = { [weak self] call in self?.update(call) }
             callKit.onError = { [weak self] message in self?.error = message }
+            let tone = HangupTonePlayer()
+            tone.canReleaseSession = { [weak self] in self?.callKit.hasPhoneAudioWork == false && self?.calls.isEmpty == true }
+            callKit.endTone = tone
             if FileManager.default.fileExists(atPath: historyURL.path) {
                 history = try JSONDecoder().decode([CallRecord].self, from: Data(contentsOf: historyURL))
             }
@@ -168,6 +173,17 @@ final class MobileState: ObservableObject, @preconcurrency SIPEngineDelegate {
     func canUse(_ id: UUID) -> Bool {
         accounts.contains { $0.id == id && $0.isEnabled && ($0.managed.map { $0.expiresAt > Date() && managed?.isSignedIn == true } ?? true) }
     }
+
+    func setHangupTone(_ enabled: Bool) {
+        HangupTone.enabled = enabled
+        hangupToneEnabled = enabled
+    }
+    /// Opens the personal account editor from the welcome screen.
+    func startManualSetup() {
+        guard !messageNavigationLocked else { return }
+        selectedTab = 2; manualSetupRequested = true
+    }
+    func consumeManualSetup() { manualSetupRequested = false }
 
     func selectTab(_ tab: Int) {
         guard !messageNavigationLocked else { return }
@@ -286,11 +302,30 @@ final class MobileState: ObservableObject, @preconcurrency SIPEngineDelegate {
               var controller = scene.windows.first(where: \.isKeyWindow)?.rootViewController else { return }
         while let presented = controller.presentedViewController { controller = presented }
         managedBusy = true; managedMessage = nil
-        do { try await managed.signIn(presenting: controller) }
+        // Only a completed sign-in connects organisations, so cancelling a re-authentication
+        // never reconnects an organisation that was deliberately disconnected.
+        var completed = false
+        do { try await managed.signIn(presenting: controller); completed = true }
         catch ManagedError.cancelled { }
         catch { managedMessage = error.localizedDescription }
         managedBusy = false
-        if managed.isSignedIn { await refreshManaged() }
+        if managed.isSignedIn {
+            await refreshManaged()
+            if completed { await connectEligibleOrganisations() }
+        }
+    }
+    /// Connects every organisation that has given this person active, licensed access, so their
+    /// phone lines arrive straight after sign-in. One failure does not stop the others.
+    func connectEligibleOrganisations() async {
+        guard let managed else { return }
+        var failures: [String] = []
+        for organisation in managed.organisations where organisation.status == "active" && organisation.licensed
+            && !managed.enrollments.contains(where: { $0.organisationID == organisation.id }) {
+            managedMessage = nil
+            await connect(organisation)
+            if let message = managedMessage { failures.append("\(organisation.name): \(message)") }
+        }
+        if !failures.isEmpty { managedMessage = "Some organisations could not be connected. " + failures.joined(separator: " ") }
     }
     func handle(url: URL) {
         if managed?.resumeSignIn(url: url) == true { return }
@@ -443,6 +478,7 @@ final class MobileState: ObservableObject, @preconcurrency SIPEngineDelegate {
     func sipEngine(_ engine: SIPEngine, callDidEnd call: CallSnapshot) {
         incomingTasks.removeValue(forKey: call.id)?.cancel()
         update(call); callKit.ended(call)
+        if HangupTone.shouldPlay(ended: call, remaining: calls, enabled: hangupToneEnabled) { callKit.playEndTone() }
         let outcome: CallOutcome = call.connectedAt != nil ? .completed : call.direction == .incoming ? (call.lastStatusCode == 603 ? .declined : .missed) : .noAnswer
         let record = CallRecord(accountID: call.accountID, direction: call.direction, outcome: outcome, remoteNumber: call.remoteNumber,
             remoteName: call.remoteName, remoteURI: call.remoteURI, startedAt: call.startedAt, connectedAt: call.connectedAt,

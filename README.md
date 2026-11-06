@@ -152,8 +152,21 @@ SHA-256 next to it. Each notarisation usually takes a few minutes. Without
 `NOTARY_PROFILE` nothing is notarised, which is only useful for checking the
 packaging.
 
-Attach the DMG and its `.sha256` file to a GitHub release tagged `v<version>`,
-then update the Homebrew cask:
+After the DMG, the script writes `dist/appcast.xml`, the in-app update feed, signed
+with Sipper's Sparkle EdDSA key. That key lives only in the login Keychain under the
+account `sipper` (create it once with Sparkle's `generate_keys --account sipper`;
+its public half is `SUPublicEDKey` in `project.yml`). macOS asks once to let
+Sparkle's tools use it: choose Always Allow. Back the key up with
+`generate_keys --account sipper -x <file>` somewhere private: without it, existing
+copies of Sipper can never be updated again. `SPARKLE_KEY_FILE=<file>` signs with an
+exported key instead. The script refuses to finish if the feed is unsigned.
+
+Releases from 0.2.0 on carry the Mac and Windows builds together under one tag,
+`v<version>`. Attach the DMG, its `.sha256` file and `appcast.xml` to that release,
+alongside the Windows installer and its `latest.yml`. The app checks
+`releases/latest/download/appcast.xml` every six hours (Settings › About, or
+Sipper › Check for Updates…), so publish the release only when every asset is in
+place, then update the Homebrew cask:
 
 ```bash
 make cask

@@ -44,7 +44,7 @@ test('Sipper for Windows works end to end', { timeout: 300000, skip: !fs.existsS
   t.after(() => server.stop());
 
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sipper-e2e-'));
-  const env = { ...process.env, SIPPER_DATA_DIR: dataDir, SIPPER_NULL_AUDIO: '1', SIPPER_TEST_PASSWORDS: 'memory', SIPPER_LOG_STDERR: '1' };
+  const env = { ...process.env, SIPPER_DATA_DIR: dataDir, SIPPER_DISABLE_UPDATES: '1', SIPPER_NULL_AUDIO: '1', SIPPER_TEST_PASSWORDS: 'memory', SIPPER_LOG_STDERR: '1' };
   const appLog = fs.createWriteStream(path.join(output, 'app.log'));
   const app = await electron.launch({
     executablePath: packaged || undefined,
@@ -71,12 +71,37 @@ test('Sipper for Windows works end to end', { timeout: 300000, skip: !fs.existsS
     nullAudio: process.env.SIPPER_NULL_AUDIO === '1',
   })), null, 2));
   const shot = (name) => page.screenshot({ path: path.join(output, `${name}.png`) }).catch(() => {});
-  await page.getByRole('heading', { name: 'Dialer' }).waitFor({ timeout: 30000 });
+  await page.getByRole('heading', { name: 'Welcome to Sipper' }).waitFor({ timeout: 30000 });
   await page.evaluate(() => window.sipper.invoke('updateSettings', { ringtone: 'silent', showNotifications: false }));
+  await shot('00-welcome');
+  await page.evaluate(() => {
+    window.hangupTones = 0;
+    window.sipper.on('hangupTone', () => { window.hangupTones += 1; });
+  });
+
+  await t.test('settings tabs fit without a scroll bar', async () => {
+    try {
+      await page.getByRole('button', { name: 'Settings', exact: true }).click();
+      const tablist = page.getByRole('tablist', { name: 'Settings sections' });
+      await tablist.waitFor();
+      // The tab bar must never become a scroll area: no scrolling overflow, and every tab fits.
+      const overflow = await tablist.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { x: style.overflowX, y: style.overflowY, clipped: element.scrollWidth > element.clientWidth };
+      });
+      assert.deepEqual(overflow, { x: 'visible', y: 'visible', clipped: false });
+      await page.getByRole('tab', { name: 'About' }).click();
+      await page.getByText('Install Sipper from sipper.dev to get automatic updates.').waitFor();
+    } finally {
+      await shot('00-settings');
+      await page.getByRole('button', { name: 'Dialer', exact: true }).click();
+      await page.getByRole('heading', { name: 'Welcome to Sipper' }).waitFor();
+    }
+  });
 
   await t.test('adds an account through the interface and registers it', async () => {
     try {
-      await page.getByRole('button', { name: 'Add account…' }).click();
+      await page.getByRole('button', { name: 'Set up manually', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Add account' });
       await dialog.getByLabel('Label', { exact: true }).fill('Reception');
       await dialog.getByLabel('Username', { exact: true }).fill('1001');
@@ -103,6 +128,7 @@ test('Sipper for Windows works end to end', { timeout: 300000, skip: !fs.existsS
       await hangUp.waitFor({ timeout: 15000 });
       await shot('02-in-call');
       await hangUp.waitFor({ state: 'detached', timeout: 20000 });
+      assert.equal(await page.evaluate(() => window.hangupTones), 1, 'the call-ended tone plays once');
       await page.getByRole('button', { name: 'History', exact: true }).click();
       await page.getByRole('listitem', { name: /^\*97, / }).first().waitFor();
     } finally {

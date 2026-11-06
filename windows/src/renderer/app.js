@@ -3,8 +3,8 @@
 
 import { callDisplayName } from '../core/sip.js';
 import { html, render, useEffect, useMemo, useRef, useState } from './lib.js';
-import { ring, stopRinging } from './ringer.js';
-import { accountByID, act, activeCall, loadState, profileByID, useAppState } from './store.js';
+import { playHangupTone, ring, stopRinging } from './ringer.js';
+import { accountByID, act, activeCall, appMode, loadState, profileByID, useAppState } from './store.js';
 import { UIContext } from './ui.js';
 import { AccountDialog, AccountPage, ProfileDialog, ProfilePage } from './views/accounts.js';
 import { ContactDialog, ContactsPage } from './views/contacts.js';
@@ -14,6 +14,7 @@ import { MessagesPage } from './views/messages.js';
 import { ImportDialog } from './views/importDialog.js';
 import { SettingsPage } from './views/settings.js';
 import { Sidebar } from './views/sidebar.js';
+import { WelcomePage } from './views/welcome.js';
 
 function App() {
   const state = useAppState();
@@ -53,6 +54,7 @@ function App() {
       }),
       window.sipper.on('ring', ({ ringtone, volume }) => ring(ringtone, volume)),
       window.sipper.on('ringStop', () => stopRinging()),
+      window.sipper.on('hangupTone', ({ volume }) => playHangupTone(volume)),
     ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, []);
@@ -126,19 +128,22 @@ function App() {
   };
   const DialogView = dialog ? dialogs[dialog.kind] : null;
 
+  // The welcome screen stands in for the dialler only: History, Contacts and Settings stay reachable.
+  const welcome = appMode(state) === 'welcome' && state.calls.length === 0 && ['dialer', 'account', 'profile'].includes(selection.kind);
+
   return html`<${UIContext.Provider} value=${ui}>
     <div class="app-window">
       <header class="titlebar">
         <img class="titlebar-icon" src="../../resources/tray@2x.png" alt="" />
         <span class="titlebar-title">Sipper</span>
       </header>
-      <div class="shell">
+      ${welcome ? html`<div class="shell shell-welcome"><main class="content"><${WelcomePage} /></main></div>` : html`<div class="shell">
         <${Sidebar} />
         <main class="content">
           ${state.calls.length > 0 && selection.kind !== 'dialer' ? html`<${CallBanner} />` : null}
           ${page}
         </main>
-      </div>
+      </div>`}
     </div>
     ${state.pendingImport
       ? html`<${ImportDialog} key=${state.pendingImport.candidates.map((c) => c.id).join()} />`

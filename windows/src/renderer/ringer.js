@@ -1,9 +1,10 @@
 // Plays the incoming-call ringtone in the main window (which keeps running while hidden).
 // Ported from Sipper/Audio/Ringer.swift; the tones are synthesised by core/ringtones.js.
 
-import { ringtoneWAV } from '../core/ringtones.js';
+import { hangupToneWAV, ringtoneWAV } from '../core/ringtones.js';
 
 const urls = new Map();
+let hangupURL = null;
 let audio = null;
 let playing = null;
 let previewTimer = null;
@@ -59,4 +60,13 @@ export function isRinging() {
 export function onRingingChange(listener) {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/** The short call-ended tone. It does not interrupt a ringtone for another call. */
+export function playHangupTone(volume) {
+  if (isRinging()) return;
+  hangupURL ??= URL.createObjectURL(new Blob([hangupToneWAV()], { type: 'audio/wav' }));
+  const tone = new Audio(hangupURL);
+  tone.volume = Math.max(0, Math.min(1, volume));
+  tone.play().catch(() => {});
 }

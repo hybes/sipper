@@ -5,7 +5,7 @@ import { isRegistered, registration, registrationShortLabel } from '../../core/s
 import { cx, Icon, IconButton, showMenu, StatusDot } from '../components.js';
 import { PROFILE_ICONS } from '../icons.js';
 import { html, useState } from '../lib.js';
-import { accountsIn, act, registrationOf, useAppState } from '../store.js';
+import { accountsIn, act, appMode, registrationOf, useAppState } from '../store.js';
 import { useUI } from '../ui.js';
 import { deleteProfileWithChoice, showAccountMenu } from './actions.js';
 
@@ -52,7 +52,7 @@ function ProfileGroup({ profile, collapsed, onToggle }) {
   const members = accountsIn(state, profile.id);
   const selected = ui.selection.kind === 'profile' && ui.selection.id === profile.id;
   const menu = () => showMenu(profile.managed ? [
-    { label: 'Managed accounts…', onSelect: () => ui.navigate({ kind: 'settings', tab: 'managed' }) },
+    { label: 'Account settings…', onSelect: () => ui.navigate({ kind: 'settings', tab: 'managed' }) },
   ] : [
     { label: 'Add account…', onSelect: () => ui.openDialog({ kind: 'addAccount', profileID: profile.id }) },
     { label: 'Edit profile…', onSelect: () => ui.openDialog({ kind: 'editProfile', id: profile.id }) },
@@ -100,9 +100,23 @@ function EngineStatus() {
   return html`<span class="sidebar-status">${registered === 0 ? 'No accounts registered' : `${registered} registered`}</span>`;
 }
 
+/** Managed mode: the organisation's lines in one flat list, without profiles to edit. */
+function PhoneLines() {
+  const state = useAppState();
+  const lines = state.accounts.filter((a) => a.managed);
+  return html`<section class="profile-group phone-lines" aria-label="Phone lines">
+    <h2 class="sidebar-heading">Phone lines</h2>
+    <div class="profile-accounts">
+      ${lines.map((account) => html`<${AccountRow} key=${account.id} account=${account}
+        profile=${state.profiles.find((p) => p.id === account.profileID) ?? { isEnabled: true }} />`)}
+    </div>
+  </section>`;
+}
+
 export function Sidebar() {
   const state = useAppState();
   const ui = useUI();
+  const managed = appMode(state) === 'managed';
   const [collapsed, setCollapsed] = useState(() => new Set());
   const toggle = (id) => setCollapsed((current) => {
     const next = new Set(current);
@@ -119,15 +133,15 @@ export function Sidebar() {
         <${NavItem} kind="contacts" icon="contacts" label="Contacts" />
         <${NavItem} kind="messages" icon="messages" label="Messages" />
       </div>
-      ${state.profiles.map((profile) => html`<${ProfileGroup} key=${profile.id} profile=${profile}
+      ${managed ? html`<${PhoneLines} />` : state.profiles.map((profile) => html`<${ProfileGroup} key=${profile.id} profile=${profile}
         collapsed=${collapsed.has(profile.id)} onToggle=${() => toggle(profile.id)} />`)}
     </div>
     <div class="sidebar-footer">
       <div class="sidebar-footer-row">
-        <${IconButton} icon="add" label="Add an account or profile" onClick=${() => showMenu([
+        ${managed ? null : html`<${IconButton} icon="add" label="Add an account or profile" onClick=${() => showMenu([
           { label: 'Add account…', onSelect: () => ui.openDialog({ kind: 'addAccount', profileID: null }) },
           { label: 'Add profile…', onSelect: () => ui.openDialog({ kind: 'addProfile' }) },
-        ])} />
+        ])} />`}
         <${EngineStatus} />
       </div>
       <${NavItem} kind="settings" icon="settings" label="Settings" />
