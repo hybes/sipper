@@ -5,7 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libedit-dev libjansson-dev libsqlite3-dev libxml2-dev uuid-dev libssl-dev \
     libpq-dev zlib1g-dev libsrtp2-dev libcurl4-openssl-dev libopus-dev && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
-RUN curl -fsSLo asterisk.tar.gz https://downloads.asterisk.org/pub/telephony/asterisk/asterisk-22.11.0.tar.gz \
+RUN curl -fsSLo asterisk.tar.gz https://downloads.asterisk.org/pub/telephony/asterisk/old-releases/asterisk-22.11.0.tar.gz \
     && echo '3bd5ee040509a3d3cd9b1ba9520c18e6ec0a7e7981ca68c457dcd36ba3c54d94  asterisk.tar.gz' | sha256sum -c - \
     && tar -xzf asterisk.tar.gz --strip-components=1 && rm asterisk.tar.gz
 # Upstream's PostgreSQL debug output includes the database password. Remove that
