@@ -111,8 +111,8 @@ def prepare(directory, public_ip, smtp_file, release, upstreams, *, proxy_networ
     envfile(directory / 'edge.env', {'SIPPER_EDGE_SHARED_SECRET': edge})
     envfile(directory / 'website.env', {
         'SIPPER_MANAGEMENT_ENABLED': 'true',
-        'MAC_DOWNLOAD_URL': 'https://github.com/hybes/sipper/releases/download/v0.1.0/Sipper-0.1.0.dmg',
-        'WINDOWS_DOWNLOAD_URL': 'https://github.com/hybes/sipper/releases/download/windows-v0.1.0/Sipper-0.1.0-Setup.exe',
+        'MAC_DOWNLOAD_URL': 'https://github.com/hybes/sipper/releases/download/v0.2.0/Sipper-0.2.0.dmg',
+        'WINDOWS_DOWNLOAD_URL': 'https://github.com/hybes/sipper/releases/download/v0.2.0/Sipper-0.2.0-Setup.exe',
     })
     envfile(directory / 'asterisk.env', {
         'SIPPER_DB_HOST': 'postgres', 'SIPPER_DB_PORT': '5432', 'SIPPER_DB_NAME': 'sipper',
