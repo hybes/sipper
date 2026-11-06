@@ -55,9 +55,15 @@ if [ -z "$identity" ]; then
   identity="$identities"
 fi
 
+# NOTARY_KEYCHAIN names a keychain file holding the profile (store-credentials --keychain FILE).
+# The default data-protection keychain cannot be read while the screen is locked, for example
+# over SSH; the login keychain file can.
+notary_auth=(--keychain-profile "$profile")
+if [ -n "${NOTARY_KEYCHAIN:-}" ]; then notary_auth+=(--keychain "$NOTARY_KEYCHAIN"); fi
+
 if [ -n "$profile" ]; then
   log "Checking notarisation credentials (Keychain profile \"$profile\")"
-  xcrun notarytool history --keychain-profile "$profile" >/dev/null \
+  xcrun notarytool history "${notary_auth[@]}" >/dev/null \
     || fail "notarytool cannot use the Keychain profile \"$profile\" (see the setup steps at the top of this script)"
 else
   echo "warning: NOTARY_PROFILE is not set, so nothing will be notarised and Gatekeeper will block the app on other Macs." >&2
@@ -106,12 +112,12 @@ fi
 notarise() {
   local file="$1" result id status
   log "Notarising $(basename "$file") (usually a few minutes)"
-  result="$(xcrun notarytool submit "$file" --keychain-profile "$profile" --wait --output-format json)" || true
+  result="$(xcrun notarytool submit "$file" "${notary_auth[@]}" --wait --output-format json)" || true
   id="$(plutil -extract id raw -o - - <<<"$result" 2>/dev/null || true)"
   status="$(plutil -extract status raw -o - - <<<"$result" 2>/dev/null || true)"
   if [ "$status" != "Accepted" ]; then
     printf '%s\n' "$result" >&2
-    if [ -n "$id" ]; then xcrun notarytool log "$id" --keychain-profile "$profile" >&2 || true; fi
+    if [ -n "$id" ]; then xcrun notarytool log "$id" "${notary_auth[@]}" >&2 || true; fi
     fail "notarisation of $(basename "$file") ended with status \"${status:-unknown}\""
   fi
   echo "Accepted (submission $id)"
