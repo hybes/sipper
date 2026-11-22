@@ -57,7 +57,7 @@ supplies its own provider settings in the portal.
 signed tokens, code consumption, JWKS and PKCE. It covers domain verification
 (with controlled DNS responses), subject/email binding, MFA, native consent,
 secret rotation, tenant boundaries and configuration encryption. The adapter
-uses Better Auth's pinned 1.7.5 OAuth continuation context; rerun these checks on
+uses the pinned OAuth provider's post-login context. Rerun these checks on
 auth-library upgrades. Real provider interoperability and public DNS verification
 remain required before production use.
 
@@ -285,7 +285,7 @@ Tests run only against a database whose name ends in `_test`, using `SIPPER_TEST
 
 With the local server running and a browser fixture created, `node --import tsx --env-file=.env scripts/http-smoke.ts` checks actual HTTP session/CSRF/body handling and the native PKCE flow through device enrolment, configuration and acknowledgement. Its code exchange matches Apple's AppAuth defaults, and it verifies refresh-token retention, API access after refresh and rejection after revocation. It also verifies the activity returned to admins, including login/request times, request IP and password omission. It reuses one synthetic local installation, with no real SIP server or payment. Add `--dev-proxy` when checking `pnpm dev`: Nuxt's Unix-socket development proxy has no verifiable peer IP, so that check expects no recorded address. Run the default check against the built Node server to verify actual IP capture. If using a different localhost origin for that server, run `db:migrate` with the same `SIPPER_BASE_URL` first to initialise its OAuth resource. The shared Mac/iOS client is in `../packages/SipperManaged`; native UI, Windows, mobile and gateway progress remains in the requirement ledger.
 
-The Better Auth migration emits an `int8`/`number` schema warning for its own rate-limit timestamp column on PostgreSQL. The current schema and integration tests work; this is not a migration failure.
+For the upgrade from Better Auth 1.7.5 to 1.7.27, `pnpm db:migrate` found no pending schema changes on a populated 1.7.5 PostgreSQL fixture. After migration, the existing browser session and company OIDC account still worked. The enrolled authenticator completed a pending MFA challenge, and a new sign-in accepted an unused backup code issued before the upgrade.
 
 `pnpm test:ios-portal` runs real AppAuth, Keychain, iOS account-controller and
 directory-calling checks against a separate built portal and database. It creates
