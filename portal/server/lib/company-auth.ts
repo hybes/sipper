@@ -56,7 +56,7 @@ export function companyAuth() {
         if (!provider) throw new APIError('NOT_FOUND', { message: 'Company sign-in is not available for this email domain. Use your Sipper password or contact your administrator.' })
         if (body.data.oauth_query) {
           // oauthProvider runs before this hook and verifies the signed query.
-          // Carry its 1.7.5 post-login context across the external OIDC redirect,
+          // Carry its post-login context across the external OIDC redirect,
           // as that plugin does for social providers. Native PKCE/consent tests
           // cover this integration, including prompt=login and max_age=0.
           const query = new URLSearchParams(body.data.oauth_query), issuedAt = Number(query.get('ba_iat'))

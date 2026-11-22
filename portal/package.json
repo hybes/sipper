@@ -27,10 +27,10 @@
     "worker:meeting": "tsx --env-file-if-exists=.env scripts/meeting-worker.ts"
   },
   "dependencies": {
-    "@better-auth/oauth-provider": "1.7.5",
-    "@better-auth/sso": "1.7.5",
+    "@better-auth/oauth-provider": "1.7.27",
+    "@better-auth/sso": "1.7.27",
     "@nuxt/ui": "4.11.1",
-    "better-auth": "1.7.5",
+    "better-auth": "1.7.27",
     "livekit-client": "2.22.3",
     "livekit-server-sdk": "2.19.1",
     "nodemailer": "^7.0.0",
